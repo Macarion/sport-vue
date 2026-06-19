@@ -407,7 +407,7 @@ const initAngleChart = () => {
       labels: timestamps.map((ts) => formatTimestamp(ts)),
       datasets: [
         {
-          label: '腾空角度',
+          label: '暂无指标',
           data: [],
           borderColor: '#67c23a',
           backgroundColor: 'rgba(103, 194, 58, 0.2)',
