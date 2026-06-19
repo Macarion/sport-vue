@@ -126,11 +126,15 @@ export const sendTeacherMessage = ({ studentId, content }) => {
 export const start_monitor_situp = (username) => {
   console.log('API调用: start_monitor_situp, username:', username)
   console.log('发送请求数据:', { username })
-  return request.post(`/api/script/start/`, { username })
+  return request.get(`/api/situp/start/`, {
+    params: { "uid": username }
+  })
 }
 //关摄像头仰卧起坐
-export const stop_monitor_situp = () => {
-  return request.get(`/api/script/stop/`)
+export const stop_monitor_situp = (username) => {
+  return request.get(`/api/situp/stop/`, {
+    params: { "uid": username }
+  })
 }
 //请求当前时刻的数据仰卧起坐
 export const latest_data_situp = ({ username }) => {
@@ -142,17 +146,73 @@ export const latest_data_situp = ({ username }) => {
 //开摄像头引体向上
 export const start_monitor_pullup = (username) => {
   return request.get(`/api/pullup/start/`, {
-    params: { username },
+    params: { "uid": username }
   })
 }
 //关摄像头引体向上
-export const stop_monitor_pullup = () => {
-  return request.get(`/api/pullup/stop/`)
+export const stop_monitor_pullup = (username) => {
+  return request.get(`/api/pullup/stop/`, {
+    params: { "uid": username }
+  })
 }
 //请求当前时刻的数据引体向上
 export const latest_data_pullup = ({ username }) => {
   return request.get('/api/pullup/latest_data/', {
     params: { username }
+  })
+}
+
+// 坐位体前屈
+export const start_monitor_sitforward = (username) => {
+  return request.post(`/api/sitforward/start/`, {
+    params: { "uid": username }
+  })
+}
+export const stop_monitor_sitforward = (username) => {
+  return request.get(`/api/sitforward/stop/`, {
+    params: { "uid": username }
+  })
+}
+export const latest_data_sitforward = ({ username }) => {
+  return request.get('/api/sitforward/latest_data/', {
+    params: { username }
+  })
+}
+
+// 立定跳远
+export const start_monitor_standjump = (username) => {
+  return request.get(`/api/standjump/start/`, {
+    params: { "uid": username }
+  })
+}
+export const stop_monitor_standjump = (username) => {
+  return request.get(`/api/standjump/stop/`, {
+    params: { "uid": username }
+  })
+}
+export const latest_data_standjump = ({ username }) => {
+  return request.get('/api/standjump/latest_data/', {
+    params: { username }
+  })
+}
+
+// 坐位体前屈
+export const sitreach_start = (params) => {
+  return request.get('/api/sitreach/start_local', { params })
+}
+
+export const sitreach_stop = (params) => {
+  return request.get('/api/sitreach/stop_local', { params })
+}
+
+export const sitreach_latest_data = (params) => {
+  return request.get('/api/sitreach/fetch_inc_data', { params })
+}
+
+export const sitreach_get_img = (params) => {
+  return request.get('/api/sitreach/get_img', {
+    params,
+    responseType: 'blob'
   })
 }
 
@@ -281,3 +341,4 @@ export const adminUpdateScore = (testid, score) => {
 export const adminDeleteScore = (testid) => {
   return request.delete('/api/admin/score-delete/', { params: { testid } })
 }
+

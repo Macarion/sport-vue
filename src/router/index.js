@@ -35,6 +35,19 @@ const router = createRouter({
           component: () => import('@/views/student/StudentTestingPullup.vue'),
         },
         {
+          path: '/student/testingsitreach',
+          name: 'SitReach',
+          component: () => import('@/views/student/StudentTestingSitReach.vue')
+        },
+        {
+          path: '/student/testingstandjump',
+          component: () => import('@/views/student/StudentTestingStandjump.vue'),
+        },
+        {
+          path: '/student/testingrace-uwb',
+          component: () => import('@/views/student/StudentTestingRaceUwb.vue'),
+        },
+        {
           path: '/student/class',
           component: () => import('@/views/student/StudentClass.vue'),
         },

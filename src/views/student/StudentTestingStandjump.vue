@@ -5,8 +5,8 @@
       <div class="camera-box">
         <!-- <video ref="videoElement" class="video-preview" autoplay playsinline></video> -->
         <!-- <div v-if="isRegister">摄像头及深度神经网络初始化中...</div> -->
-            <img :src="frameSrc" alt="实时图像" v-if="frameSrc" />
-            <div v-else class="loading">加载中...</div>
+        <img :src="frameSrc" alt="实时图像" v-if="frameSrc" />
+        <div v-else class="loading">加载中...</div>
       </div>
       <div class="chart-box">
         <h3>分数</h3>
@@ -30,11 +30,11 @@
       <el-row :gutter="20" class="info-row">
         <el-col :span="8">
           <div class="info-card">
-            <h3>个数记录</h3>
+            <h3>跳远距离</h3>
             <div class="info-content">
               <div class="count-display">{{ num }}</div>
-              <hr width="30%" color="green" size="3px" align="center" />
-              <div class="count-display">{{ num_all }}</div>
+              <!-- <hr width="30%" color="green" size="3px" align="center" />
+              <div class="count-display">{{ num_all }}</div> -->
             </div>
           </div>
         </el-col>
@@ -59,9 +59,9 @@
 
 <script setup>
 import {
-  start_monitor_pullup,
-  stop_monitor_pullup,
-  latest_data_pullup,
+  start_monitor_standjump,
+  stop_monitor_standjump,
+  latest_data_standjump,
   get_img,
   userUpdateTestingInfo,
   userUpdateTestingImg,
@@ -101,7 +101,6 @@ let nums = []
 const frameSrc = ref(null)
 const isRegister = ref(false)
 const detectStarted = ref(false)
-const cameraStarted = ref(false)
 
 let video_ws
 let data_ws
@@ -113,7 +112,6 @@ const username = localStorage.getItem('username')
 console.log('获取到的username:', username)
 
 const start = async () => {
-  
   if (cameraActive.value) return // 防止重复开启
   isRegister.value = true
   num.value = 0
@@ -123,7 +121,6 @@ const start = async () => {
   angles = []
   timestamps = []
   detectStarted.value = false
-  cameraStarted.value = false
 
   // 清除已有定时器
   if (timer1) clearInterval(timer1)
@@ -149,14 +146,15 @@ const start = async () => {
     initCountChart()
     initAngleChart()
 
-    const res = await start_monitor_pullup(username)
+    const res = await start_monitor_standjump(username)
     console.log('启动摄像头返回:', res)
 
     if (res.status === 200) {
-      video_ws, data_ws = startRecord(username, 'pullup')
+      video_ws, data_ws = startRecord(username, 'jump')
 
       cameraActive.value = true
     }
+
 
     // // 仅在摄像头开启时启动定时器
     // if (cameraActive.value) {
@@ -174,29 +172,24 @@ const start = async () => {
   }
 }
 
-const stop = async (shouldStopBackend = true) => {
+const stop = async () => {
   speakMessage('测试已结束')
   isRegister.value = false
   cameraActive.value = false // 立即设置摄像头状态为关闭
   detectStarted.value = false
-  cameraStarted.value= false
   try {
-    if (shouldStopBackend) {
-      stopRecord(video_ws)
+    stopRecord(video_ws)
 
-      const res = await stop_monitor_pullup(username)
-      console.log('关闭摄像头返回:', res)
-    } else {
-      console.log('检测到测试自然结束，跳过主动停止后端进程，等待其完成上传')
-    }
+    const res = await stop_monitor_standjump(username)
+    console.log('关闭摄像头返回:', res)
 
-    // // 清除定时器
-    // if (timer1) clearInterval(timer1)
-    // if (timer2) clearInterval(timer2)
-    // timer1 = null
-    // timer2 = null
+  //   // 清除定时器
+  //   if (timer1) clearInterval(timer1)
+  //   if (timer2) clearInterval(timer2)
+  //   timer1 = null
+  //   timer2 = null
 
-    // // 清除图表数据
+    // 清除图表数据
     // if (countChartInstance) {
     //   countChartInstance.destroy()
     //   countChartInstance = null
@@ -208,6 +201,7 @@ const stop = async (shouldStopBackend = true) => {
 
     // // 清除图像预览
     // cleanup()
+
 
     console.log('所有数据已重置')
   } catch (err) {
@@ -259,12 +253,13 @@ const connectWS = (uid, sport, type) => {
         console.log(result);
 
         frameSrc.value = msg.painting;
-        num.value = result.score;
-        num_all.value = result.num_all;
+        num.value = result.score_cm;
+        // num_all.value = result.num_all;
 
         timestamps.push(Number(result.timestamp));
-        nums.push(Number(result.score));
-        angles.push(Number(result.angle));
+        nums.push(Number(result.score_cm));
+        angles.push(0);
+        // TODO
         updateCharts();
 
       } catch (error) {
@@ -357,7 +352,7 @@ const initCountChart = () => {
       labels: timestamps.map((ts) => formatTimestamp(ts)),
       datasets: [
         {
-          label: '引体向上个数',
+          label: '立定跳远距离',
           data: [],
           borderColor: '#2d7acd',
           backgroundColor: 'rgba(45, 122, 205, 0.2)',
@@ -384,7 +379,7 @@ const initCountChart = () => {
         y: {
           title: {
             display: true,
-            text: '个数',
+            text: '距离 (cm)',
           },
         },
       },
@@ -412,7 +407,7 @@ const initAngleChart = () => {
       labels: timestamps.map((ts) => formatTimestamp(ts)),
       datasets: [
         {
-          label: '肘关节打开角度',
+          label: '腾空角度',
           data: [],
           borderColor: '#67c23a',
           backgroundColor: 'rgba(103, 194, 58, 0.2)',
@@ -490,27 +485,26 @@ const formatTimestamp = (timestamp) => {
 const sendRequest = async () => {
   if (!cameraActive.value) return // 仅在摄像头开启时发送请求
   try {
-    const res = await latest_data_pullup({ username })
-    const data = res.data || {} 
-    console.log('最新数据', res.data)
-    if (data.finished && cameraStarted.value && detectStarted.value) {
-      await closeCamera(false)
+    const res = await latest_data_standjump({ username })
+    const data = res.data || {}
+    console.log('最新数据', data)
+
+    if (data.finished) {
+      await closeCamera()
       return
     }
-    if(data.readytohang &&!cameraStarted.value){
-      speakMessage('请上杠悬挂')
-      cameraStarted.value = true
-    }
+
     if (data.detectsuccess && !detectStarted.value) {
       speakMessage('测试开始')
       detectStarted.value = true
     }
-    num.value = res.data.num
-    num_all.value = res.data.num_all
-    count.value = res.data.num
-    nums.value = res.data.nums
-    timestamps.value = res.data.timestamps
-    angles.value = res.data.angles
+
+    num.value = data.num
+    num_all.value = data.num_all
+    count.value = data.num
+    nums.value = data.nums
+    timestamps.value = data.timestamps
+    angles.value = data.angles
     updateCharts()
   } catch (err) {
     console.error('获取最新数据失败:', err)
@@ -553,7 +547,7 @@ onUnmounted(() => {
   cleanup()
   if (cameraActive.value) {
     cameraActive.value = false
-    stop_monitor_pullup(username).catch((err) => console.error('停止监控失败:', err))
+    stop_monitor_standjump().catch((err) => console.error('停止监控失败:', err))
   }
 })
 

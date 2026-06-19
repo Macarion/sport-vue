@@ -38,6 +38,15 @@ const loginsitup = async () => {
 const loginpullup = async () => {
   router.push('/student/testingpullup')
 }
+const loginsitreach = async () => {
+  router.push('/student/testingsitreach')
+}
+const loginstandjump = async () => {
+  router.push('/student/testingstandjump')
+}
+const openRaceUwb = async () => {
+  router.push('/student/testingrace-uwb')
+}
 </script>
 
 <template>
@@ -58,20 +67,29 @@ const loginpullup = async () => {
             class="full-width-button1 animated-button bg-image6"
             ><span>引体向上</span></el-button
           >
+          <el-button
+            type="info"
+            class="full-width-button1 animated-button bg-image2"
+            @click="loginsitreach"
+            ><span>坐位体前屈</span></el-button
+          >
+          <el-button
+            type="info"
+            class="full-width-button1 animated-button bg-image8"
+            @click="loginstandjump"
+            ><span>立定跳远</span></el-button
+          >
+          <el-button
+            type="info"
+            class="full-width-button1 animated-button bg-image5"
+            @click="openRaceUwb"
+            ><span>800/1000米跑</span></el-button>
+
           <el-button type="primary" class="full-width-button bg-image1"
             ><span>身高/体重</span></el-button
           >
-          <el-button type="success" class="full-width-button bg-image2"
-            ><span>坐位体前屈</span></el-button
-          >
           <el-button type="info" class="full-width-button bg-image3"><span>肺活量</span></el-button>
           <el-button type="info" class="full-width-button bg-image4"><span>50米跑</span></el-button>
-          <el-button type="info" class="full-width-button bg-image5"
-            ><span>800/1000米跑</span></el-button
-          >
-          <el-button type="info" class="full-width-button bg-image8"
-            ><span>立定跳远</span></el-button
-          >
         </div>
       </el-main>
     </el-container>
