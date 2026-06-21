@@ -60,10 +60,7 @@
             <el-radio-group v-model="sourceType" class="source-mode">
               <el-radio-button label="serial">UART 串口</el-radio-button>
               <el-radio-button label="http">后端数据库</el-radio-button>
-<<<<<<< Updated upstream
-=======
               <el-radio-button label="direct_db">直连数据库</el-radio-button>
->>>>>>> Stashed changes
             </el-radio-group>
 
             <div class="imu-option">
@@ -91,19 +88,11 @@
             <div v-else class="form-grid">
               <label class="wide-field">
                 <span>后端接口</span>
-<<<<<<< Updated upstream
-                <el-input v-model="httpUrl" disabled />
-              </label>
-              <label>
-                <span>模式</span>
-                <el-input value="轮询数据库" disabled />
-=======
                 <el-input :model-value="activeBackendUrl" disabled />
               </label>
               <label>
                 <span>模式</span>
                 <el-input :model-value="activeBackendModeText" disabled />
->>>>>>> Stashed changes
               </label>
               <label>
                 <span>轮询间隔 ms</span>
@@ -155,11 +144,7 @@
             </div>
             <div class="race-line-editor">
               <div class="race-line-row" v-for="line in raceLineDraftRows" :key="line.key">
-<<<<<<< Updated upstream
-                <strong>{{ line.label }}</strong>
-=======
                 <el-checkbox v-model="line.visible" class="race-line-visible">{{ line.label }}</el-checkbox>
->>>>>>> Stashed changes
                 <label><span>x1</span><el-input-number v-model="line.x1" :step="0.1" controls-position="right" /></label>
                 <label><span>y1</span><el-input-number v-model="line.y1" :step="0.1" controls-position="right" /></label>
                 <label><span>x2</span><el-input-number v-model="line.x2" :step="0.1" controls-position="right" /></label>
@@ -167,11 +152,7 @@
               </div>
             </div>
             <div class="anchor-actions">
-<<<<<<< Updated upstream
-              <span>修改起终点线会重置当前累计距离和速度。</span>
-=======
               <span>修改起终点线坐标会重置当前累计距离和速度。</span>
->>>>>>> Stashed changes
               <div>
                 <el-button size="small" @click="cancelRaceLineDrafts">取消</el-button>
                 <el-button size="small" type="primary" @click="applyRaceLineDrafts">确定</el-button>
@@ -601,18 +582,12 @@ const serialReadableClosed = ref(null)
 const serialBuffer = ref('')
 
 const httpUrl = ref(`${baseURL}api/uwb/fetch_inc_data/`)
-<<<<<<< Updated upstream
-=======
 const directDbUrl = ref(`${baseURL}api/uwb/direct_db/fetch_inc_data/`)
->>>>>>> Stashed changes
 const pollIntervalMs = ref(180)
 const httpConnected = ref(false)
 const httpStreamConnecting = ref(false)
 const httpStreamConnected = ref(false)
-<<<<<<< Updated upstream
-=======
 const activeHttpSource = ref('http')
->>>>>>> Stashed changes
 const uwbLastId = ref(0)
 const httpSessionId = ref('')
 const liveRecordCount = ref(0)
@@ -631,13 +606,8 @@ const anchors = ref([
 ])
 const anchorDrafts = ref(cloneAnchorList(anchors.value))
 const raceLines = ref({
-<<<<<<< Updated upstream
-  start: { key: 'start', label: '起点线', x1: 0, y1: -1.5, x2: 0, y2: 11.5 },
-  finish: { key: 'finish', label: '终点线', x1: 20, y1: -1.5, x2: 20, y2: 11.5 },
-=======
   start: { key: 'start', label: '起点线', visible: false, x1: 0, y1: -1.5, x2: 0, y2: 11.5 },
   finish: { key: 'finish', label: '终点线', visible: false, x1: 20, y1: -1.5, x2: 20, y2: 11.5 },
->>>>>>> Stashed changes
 })
 const raceLineDraftRows = ref(cloneRaceLineRows(raceLines.value))
 const runnerBindings = ref(loadRunnerBindings())
@@ -658,13 +628,8 @@ const trackPointLimit = ref(80)
 const imuFilterEnabled = ref(false)
 const selectedTagName = ref('')
 const leaderboardSortKey = ref('distance')
-<<<<<<< Updated upstream
-const leftDockCollapsed = ref(false)
-const rightDockCollapsed = ref(false)
-=======
 const leftDockCollapsed = ref(true)
 const rightDockCollapsed = ref(true)
->>>>>>> Stashed changes
 const styleDockCollapsed = ref(true)
 const mapBackgroundMode = ref('track')
 const mapPanEnabled = ref(false)
@@ -723,9 +688,6 @@ const TrackMap = defineComponent({
     const lastDragPoint = ref(null)
 
     const getSvgPoint = (event) => {
-<<<<<<< Updated upstream
-      const rect = svgRef.value?.getBoundingClientRect()
-=======
       const svg = svgRef.value
       if (!svg) return null
       const matrix = svg.getScreenCTM?.()
@@ -741,7 +703,6 @@ const TrackMap = defineComponent({
         }
       }
       const rect = svg.getBoundingClientRect()
->>>>>>> Stashed changes
       if (!rect) return null
       return {
         x: ((event.clientX - rect.left) / rect.width) * 1000,
@@ -1174,10 +1135,6 @@ const TrackMap = defineComponent({
 const connectionStatus = computed(() => {
   if (serialConnected.value) return `串口已连接，波特率 ${baudRate.value}`
   if (httpConnected.value) {
-<<<<<<< Updated upstream
-    const mode = httpStreamConnected.value ? 'SSE' : httpStreamConnecting.value ? 'SSE连接中' : 'polling'
-    return `后端数据库已连接（${mode}），本次接收 ${liveRecordCount.value} 条，数据库游标 ${uwbLastId.value || 0}`
-=======
     const mode =
       activeHttpSource.value === 'direct_db'
         ? '直连数据库轮询'
@@ -1187,13 +1144,10 @@ const connectionStatus = computed(() => {
             ? 'SSE连接中'
             : 'polling'
     return `${activeHttpSource.value === 'direct_db' ? '直连数据库' : '后端数据库'}已连接（${mode}），本次接收 ${liveRecordCount.value} 条，数据库游标 ${uwbLastId.value || 0}`
->>>>>>> Stashed changes
   }
   return '未连接'
 })
 
-<<<<<<< Updated upstream
-=======
 const displayedBackendSource = computed(() => (httpConnected.value ? activeHttpSource.value : sourceType.value))
 
 const activeBackendUrl = computed(() => (displayedBackendSource.value === 'direct_db' ? directDbUrl.value : httpUrl.value))
@@ -1204,7 +1158,6 @@ const activeBackendModeText = computed(() =>
     : 'SSE 实时推送，失败后轮询兜底',
 )
 
->>>>>>> Stashed changes
 const onlineTags = computed(() =>
   tags.value.filter((tag) => !tag.updatedAt || onlineNow.value - tag.updatedAt <= OFFLINE_TAG_TIMEOUT_MS),
 )
@@ -1337,19 +1290,6 @@ const drawableAnchors = computed(() =>
 )
 
 const drawableRaceLines = computed(() =>
-<<<<<<< Updated upstream
-  ['start', 'finish'].map((key) => {
-    const line = raceLines.value[key]
-    return {
-      ...line,
-      key,
-      label: line.label ?? (key === 'start' ? '起点线' : '终点线'),
-      color: key === 'start' ? '#5fffe0' : '#ffb84d',
-      start: toScreenPoint({ x: line.x1, y: line.y1 }),
-      end: toScreenPoint({ x: line.x2, y: line.y2 }),
-    }
-  }),
-=======
   ['start', 'finish']
     .map((key) => {
       const line = raceLines.value[key]
@@ -1364,7 +1304,6 @@ const drawableRaceLines = computed(() =>
       }
     })
     .filter(Boolean),
->>>>>>> Stashed changes
 )
 
 const drawableTags = computed(() =>
@@ -1442,10 +1381,6 @@ watch(
   { deep: true },
 )
 
-<<<<<<< Updated upstream
-
-=======
->>>>>>> Stashed changes
 function loadRunnerBindings() {
   if (typeof window === 'undefined') return []
   const raw = window.localStorage.getItem(RUNNER_BINDINGS_STORAGE_KEY)
@@ -1602,10 +1537,7 @@ function cloneRaceLineRows(lines) {
   return ['start', 'finish'].map((key) => ({
     key,
     label: lines[key]?.label ?? (key === 'start' ? '起点线' : '终点线'),
-<<<<<<< Updated upstream
-=======
     visible: lines[key]?.visible !== false,
->>>>>>> Stashed changes
     x1: Number(lines[key]?.x1 ?? 0),
     y1: Number(lines[key]?.y1 ?? 0),
     x2: Number(lines[key]?.x2 ?? 0),
@@ -1619,21 +1551,6 @@ function applyRaceLineDrafts() {
     return
   }
   const next = {}
-<<<<<<< Updated upstream
-  raceLineDraftRows.value.forEach((line) => {
-    next[line.key] = {
-      key: line.key,
-      label: line.label,
-      x1: Number(line.x1),
-      y1: Number(line.y1),
-      x2: Number(line.x2),
-      y2: Number(line.y2),
-    }
-  })
-  raceLines.value = next
-  resetRaceProgress()
-  ElMessage.success('起终点线已生效，累计距离已重置')
-=======
   let geometryChanged = false
   raceLineDraftRows.value.forEach((line) => {
     const current = raceLines.value[line.key] ?? {}
@@ -1661,7 +1578,6 @@ function applyRaceLineDrafts() {
   } else {
     ElMessage.success('起终点线显示设置已生效')
   }
->>>>>>> Stashed changes
 }
 
 function cancelRaceLineDrafts() {
@@ -1792,10 +1708,6 @@ async function disconnectSerial() {
 
 async function connectHttp() {
   await disconnectHttp()
-<<<<<<< Updated upstream
-  try {
-    clearLiveDisplayData()
-=======
   activeHttpSource.value = sourceType.value === 'direct_db' ? 'direct_db' : 'http'
   try {
     clearLiveDisplayData()
@@ -1806,7 +1718,6 @@ async function connectHttp() {
       startHttpFallbackPolling()
       return
     }
->>>>>>> Stashed changes
     const { data } = await request.get('api/uwb/latest/')
     httpSessionId.value = data?.record?.session_id || ''
     uwbLastId.value = Number(data?.last_id || 0)
@@ -1830,10 +1741,7 @@ async function disconnectHttp() {
   httpTimer = null
   if (!wasConnected) return
   httpSessionId.value = ''
-<<<<<<< Updated upstream
-=======
   activeHttpSource.value = 'http'
->>>>>>> Stashed changes
 }
 
 function connectUwbStream() {
@@ -1935,19 +1843,12 @@ async function fetchHttpPayload() {
   if (!httpConnected.value || httpFetchPending) return
   httpFetchPending = true
   try {
-<<<<<<< Updated upstream
-    const { data } = await request.get('api/uwb/fetch_inc_data/', {
-      params: {
-        after_id: uwbLastId.value || 0,
-        limit: 200,
-=======
     const isDirectDb = activeHttpSource.value === 'direct_db'
     const { data } = await request.get(isDirectDb ? 'api/uwb/direct_db/fetch_inc_data/' : 'api/uwb/fetch_inc_data/', {
       params: {
         after_id: uwbLastId.value || 0,
         limit: 200,
         ...(isDirectDb ? { anchors: JSON.stringify(anchors.value) } : {}),
->>>>>>> Stashed changes
       },
     })
     if (Number.isFinite(Number(data?.last_id))) uwbLastId.value = Number(data.last_id)
@@ -1958,11 +1859,7 @@ async function fetchHttpPayload() {
   } catch (error) {
     httpFetchFailCount += 1
     if (httpFetchFailCount >= 3) {
-<<<<<<< Updated upstream
-      ElMessage.error(`后端数据库获取失败：${error.response?.data?.detail || error.message}`)
-=======
       ElMessage.error(`${activeHttpSource.value === 'direct_db' ? '直连数据库' : '后端数据库'}获取失败：${error.response?.data?.detail || error.message}`)
->>>>>>> Stashed changes
       disconnectHttp()
     }
   } finally {
@@ -4760,11 +4657,7 @@ onBeforeUnmount(() => {
 
 .race-line-row {
   display: grid;
-<<<<<<< Updated upstream
-  grid-template-columns: 92px repeat(4, minmax(92px, 1fr));
-=======
   grid-template-columns: 112px repeat(4, minmax(92px, 1fr));
->>>>>>> Stashed changes
   gap: 10px;
   align-items: end;
   padding: 12px;
@@ -4773,15 +4666,11 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.035);
 }
 
-<<<<<<< Updated upstream
-.race-line-row strong {
-=======
 .race-line-visible {
   align-self: center;
 }
 
 .race-line-visible :deep(.el-checkbox__label) {
->>>>>>> Stashed changes
   color: #ffda91;
   font-weight: 900;
 }

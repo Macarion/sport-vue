@@ -35,18 +35,15 @@ const router = createRouter({
           component: () => import('@/views/student/StudentTestingPullup.vue'),
         },
         {
-<<<<<<< Updated upstream
           path: '/student/testingsitreach',
           name: 'SitReach',
-          component: () => import('@/views/student/StudentTestingSitReach.vue')
+          component: () => import('@/views/student/StudentTestingSitReach.vue'),
         },
         {
           path: '/student/testingstandjump',
           component: () => import('@/views/student/StudentTestingStandjump.vue'),
         },
         {
-=======
->>>>>>> Stashed changes
           path: '/student/testingrace-uwb',
           component: () => import('@/views/student/StudentTestingRaceUwb.vue'),
         },
