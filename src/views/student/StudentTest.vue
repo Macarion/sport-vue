@@ -38,15 +38,12 @@ const loginsitup = async () => {
 const loginpullup = async () => {
   router.push('/student/testingpullup')
 }
-<<<<<<< Updated upstream
 const loginsitreach = async () => {
   router.push('/student/testingsitreach')
 }
 const loginstandjump = async () => {
   router.push('/student/testingstandjump')
 }
-=======
->>>>>>> Stashed changes
 const openRaceUwb = async () => {
   router.push('/student/testingrace-uwb')
 }
@@ -93,18 +90,6 @@ const openRaceUwb = async () => {
           >
           <el-button type="info" class="full-width-button bg-image3"><span>肺活量</span></el-button>
           <el-button type="info" class="full-width-button bg-image4"><span>50米跑</span></el-button>
-<<<<<<< Updated upstream
-=======
-          <el-button
-          @click="openRaceUwb"
-          type="info"
-          class="full-width-button1 animated-button bg-image5"
-            ><span>800/1000米跑</span></el-button
-          >
-          <el-button type="info" class="full-width-button bg-image8"
-            ><span>立定跳远</span></el-button
-          >
->>>>>>> Stashed changes
         </div>
       </el-main>
     </el-container>
