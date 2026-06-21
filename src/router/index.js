@@ -37,7 +37,7 @@ const router = createRouter({
         {
           path: '/student/testingsitreach',
           name: 'SitReach',
-          component: () => import('@/views/student/StudentTestingSitReach.vue')
+          component: () => import('@/views/student/StudentTestingSitReach.vue'),
         },
         {
           path: '/student/testingstandjump',

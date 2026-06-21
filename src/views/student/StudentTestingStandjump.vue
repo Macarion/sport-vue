@@ -222,8 +222,8 @@ const openCamera = async () => {
   if (mediaStream) return
   mediaStream = await navigator.mediaDevices.getUserMedia({
     video: {
-      width: 640,
-      height: 480,
+      width: 1280,
+      height: 720,
     },
     audio: false,
   })
@@ -630,7 +630,7 @@ onUnmounted(() => {
 }
 
 .video-preview {
-  width: 100%;
+  width: auto;
   height: 100%;
   object-fit: cover;
   display: block;

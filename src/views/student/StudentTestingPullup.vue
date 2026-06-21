@@ -5,7 +5,7 @@
       <div class="camera-box">
         <!-- <video ref="videoElement" class="video-preview" autoplay playsinline></video> -->
         <!-- <div v-if="isRegister">摄像头及深度神经网络初始化中...</div> -->
-            <img :src="frameSrc" alt="实时图像" v-if="frameSrc" />
+            <img :src="frameSrc" style="height: 100%;" alt="实时图像" v-if="frameSrc" />
             <div v-else class="loading">加载中...</div>
       </div>
       <div class="chart-box">
