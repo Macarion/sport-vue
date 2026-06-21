@@ -2,7 +2,7 @@
   <div class="container">
     <div class="camera-chart-container">
       <div class="camera-box">
-        <img :src="frameSrc" alt="实时图像" v-if="frameSrc && cameraActive" class="video-img" />
+        <img :src="frameSrc" style="height: 100%;" alt="实时图像" v-if="frameSrc && cameraActive" class="video-img" />
 
         <div v-else-if="isRegister && cameraActive">
           坐位体前屈检测初始化中...
