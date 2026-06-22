@@ -219,9 +219,10 @@ const stop = async (shouldStopBackend = true) => {
 const openCamera = async () => {
     mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: 640,
-          height: 480
-          },
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 15, max: 30 }
+        },
         audio: false
     });
     // videoElement.value.srcObject = mediaStream;
