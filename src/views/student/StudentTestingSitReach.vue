@@ -1,10 +1,15 @@
 <template>
   <div class="container">
-    <div class="camera-chart-container">
+    <div class="main-panel">
       <div class="camera-box">
-        <img :src="frameSrc" style="height: 100%;" alt="实时图像" v-if="frameSrc && cameraActive" class="video-img" />
+        <img
+          :src="frameSrc"
+          alt="实时图像"
+          v-if="frameSrc && cameraActive"
+          class="video-img"
+        />
 
-        <div v-else-if="isRegister && cameraActive">
+        <div v-else-if="isRegister && cameraActive" class="camera-tip">
           坐位体前屈检测初始化中...
         </div>
 
@@ -13,54 +18,39 @@
         </div>
       </div>
 
-      <div class="chart-box">
-        <h3>实时成绩</h3>
-        <div class="info-content">
-          <div class="score-display">{{ score }} cm</div>
-          <div class="sub-text">当前最大成绩：{{ maxScore }} cm</div>
-          <div class="sub-text" :class="cheat ? 'danger' : 'safe'">
-            {{ cheat ? '检测到违规：请保持双腿伸直' : '动作状态正常' }}
-          </div>
+      <div class="score-panel">
+        <div class="score-card current-score">
+          <div class="score-title">当前成绩</div>
+          <div class="score-value">{{ score }}</div>
+          <div class="score-unit">cm</div>
+        </div>
+
+        <div class="score-card best-score">
+          <div class="score-title">最佳成绩</div>
+          <div class="score-value">{{ maxScore }}</div>
+          <div class="score-unit">cm</div>
+        </div>
+
+        <div class="status-card" :class="cheat ? 'danger-card' : 'safe-card'">
+          {{ cheat ? '检测到违规：请保持双腿伸直' : '动作状态正常' }}
+        </div>
+
+        <div class="stage-card">
+          当前阶段：{{ stageText }}
         </div>
       </div>
     </div>
 
     <div class="control-buttons">
-      <el-button type="primary" @click="openCamera" :disabled="cameraActive">开始测试</el-button>
-      <el-button type="danger" @click="closeCamera" :disabled="!cameraActive">结束测试</el-button>
-      <el-button @click="login">返回</el-button>
-    </div>
-
-    <div class="info-container">
-      <el-row :gutter="20" class="info-row">
-        <el-col :span="8">
-          <div class="info-card">
-            <h3>成绩记录</h3>
-            <div class="info-content">
-              <div class="score-display">{{ maxScore }}</div>
-              <div class="unit">cm</div>
-            </div>
-          </div>
-        </el-col>
-
-        <el-col :span="8">
-          <div class="info-card">
-            <h3>成绩变化曲线</h3>
-            <div class="chart-section">
-              <canvas ref="scoreChartElement"></canvas>
-            </div>
-          </div>
-        </el-col>
-
-        <el-col :span="8">
-          <div class="info-card">
-            <h3>姿态/违规状态</h3>
-            <div class="chart-section">
-              <canvas ref="cheatChartElement"></canvas>
-            </div>
-          </div>
-        </el-col>
-      </el-row>
+      <el-button type="primary" @click="openCamera" :disabled="cameraActive">
+        开始测试
+      </el-button>
+      <el-button type="danger" @click="closeCamera" :disabled="!cameraActive">
+        结束测试
+      </el-button>
+      <el-button @click="login">
+        返回
+      </el-button>
     </div>
   </div>
 </template>
@@ -73,15 +63,11 @@ import {
   sitreach_get_img
 } from '@/api/user.js'
 
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import Chart from 'chart.js/auto'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 
 let timer1 = null
 let timer2 = null
-
-const scoreChartElement = ref(null)
-const cheatChartElement = ref(null)
 
 const cameraActive = ref(false)
 const isRegister = ref(false)
@@ -92,16 +78,17 @@ const maxScore = ref(0)
 const cheat = ref(false)
 const stage = ref('未开始')
 
-const timestamps = ref([])
-const scores = ref([])
-const maxScores = ref([])
-const cheats = ref([])
-
-let scoreChartInstance = null
-let cheatChartInstance = null
-
 const router = useRouter()
-const username = localStorage.getItem('username')
+const username = localStorage.getItem('username') || 'test'
+
+const stageText = computed(() => {
+  if (stage.value === 'PREPARING') return '准备阶段'
+  if (stage.value === 'MEASURING') return '测量中'
+  if (stage.value === 'FINISHED') return '已完成'
+  if (stage.value === 'STOPPED') return '已停止'
+  if (stage.value === 'NOT_STARTED') return '未开始'
+  return stage.value || '未开始'
+})
 
 const openCamera = async () => {
   isRegister.value = true
@@ -112,35 +99,16 @@ const openCamera = async () => {
   cheat.value = false
   stage.value = '初始化中'
 
-  timestamps.value = []
-  scores.value = []
-  maxScores.value = []
-  cheats.value = []
-
   clearInterval(timer1)
   clearInterval(timer2)
-
   cleanup()
-
-  if (scoreChartInstance) {
-    scoreChartInstance.destroy()
-    scoreChartInstance = null
-  }
-
-  if (cheatChartInstance) {
-    cheatChartInstance.destroy()
-    cheatChartInstance = null
-  }
-
-  initScoreChart()
-  initCheatChart()
 
   try {
     const res = await sitreach_start({ username })
     console.log('坐位体前屈启动返回：', res)
 
     cameraActive.value = true
-    stage.value = '测试中'
+    stage.value = 'PREPARING'
 
     timer1 = setInterval(fetchFrame, 66)
     timer2 = setInterval(fetchLatestData, 500)
@@ -176,129 +144,6 @@ const login = async () => {
   router.push('/student/test')
 }
 
-const initScoreChart = () => {
-  const ctx = scoreChartElement.value.getContext('2d')
-
-  scoreChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [
-        {
-          label: '实时成绩(cm)',
-          data: [],
-          borderColor: '#2d7acd',
-          backgroundColor: 'rgba(45, 122, 205, 0.2)',
-          fill: true,
-          tension: 0,
-          pointRadius: 0
-        },
-        {
-          label: '最大成绩(cm)',
-          data: [],
-          borderColor: '#67c23a',
-          backgroundColor: 'rgba(103, 194, 58, 0.2)',
-          fill: false,
-          tension: 0,
-          pointRadius: 0
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          title: {
-            display: true,
-            text: '时间'
-          }
-        },
-        y: {
-          title: {
-            display: true,
-            text: '成绩(cm)'
-          }
-        }
-      }
-    }
-  })
-}
-
-const initCheatChart = () => {
-  const ctx = cheatChartElement.value.getContext('2d')
-
-  cheatChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [{
-        label: '违规状态',
-        data: [],
-        borderColor: '#f56c6c',
-        backgroundColor: 'rgba(245, 108, 108, 0.2)',
-        fill: true,
-        tension: 0,
-        pointRadius: 0
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          title: {
-            display: true,
-            text: '时间'
-          }
-        },
-        y: {
-          min: 0,
-          max: 1,
-          ticks: {
-            stepSize: 1,
-            callback: value => value === 1 ? '违规' : '正常'
-          }
-        }
-      }
-    }
-  })
-}
-
-const updateCharts = () => {
-  const startTime = timestamps.value[0]
-  const labels = timestamps.value.map(ts => formatTimestamp(ts - startTime))
-  const maxPoints = 100
-
-  const showLabels = labels.slice(-maxPoints)
-  const showScores = scores.value.slice(-maxPoints)
-  const showMaxScores = maxScores.value.slice(-maxPoints)
-  const showCheats = cheats.value.slice(-maxPoints)
-
-  if (scoreChartInstance) {
-    scoreChartInstance.data.labels = showLabels
-    scoreChartInstance.data.datasets[0].data = showScores
-    scoreChartInstance.data.datasets[1].data = showMaxScores
-    scoreChartInstance.update()
-  }
-
-  if (cheatChartInstance) {
-    cheatChartInstance.data.labels = showLabels
-    cheatChartInstance.data.datasets[0].data = showCheats
-    cheatChartInstance.update()
-  }
-}
-
-const formatTimestamp = (isoString) => {
-  if (!isoString) return ''
-  const date = new Date(isoString)
-  return [
-    // date.getHours().toString().padStart(2, '0'),
-    date.getMinutes().toString().padStart(2, '0'),
-    date.getSeconds().toString().padStart(2, '0')
-  ].join(':')
-}
-
 const fetchLatestData = async () => {
   try {
     const res = await sitreach_latest_data({ username })
@@ -308,13 +153,6 @@ const fetchLatestData = async () => {
     maxScore.value = res.data.max_score ?? 0
     cheat.value = res.data.cheat ?? false
     stage.value = res.data.stage ?? stage.value
-
-    scores.value = res.data.scores ?? []
-    maxScores.value = res.data.max_scores ?? []
-    timestamps.value = res.data.timestamps ?? []
-    cheats.value = (res.data.cheats ?? []).map(v => v ? 1 : 0)
-
-    updateCharts()
   } catch (err) {
     console.error('获取坐位体前屈数据失败:', err)
   }
@@ -330,19 +168,16 @@ const cleanup = () => {
 const fetchFrame = async () => {
   try {
     const res = await sitreach_get_img({ username })
+
     if (frameSrc.value) {
       URL.revokeObjectURL(frameSrc.value)
     }
+
     frameSrc.value = URL.createObjectURL(res.data)
   } catch (err) {
     console.error('图像流获取失败:', err)
   }
 }
-
-onMounted(() => {
-  initScoreChart()
-  initCheatChart()
-})
 
 onBeforeUnmount(() => {
   clearInterval(timer1)
@@ -360,23 +195,24 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
-.camera-chart-container {
+.main-panel {
   flex: 1;
   display: flex;
+  gap: 20px;
+  padding: 20px;
   min-height: 0;
 }
 
 .camera-box {
-  flex: 0 0 auto;
-  width: 60%;
-  aspect-ratio: 16 / 9;
+  flex: 1;
   background: #000;
-  position: relative;
+  border-radius: 10px;
   overflow: hidden;
   display: flex;
   justify-content: center;
   align-items: center;
-  color: #fff;
+  color: #ffffff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
 }
 
 .video-img {
@@ -387,110 +223,108 @@ onBeforeUnmount(() => {
 
 .camera-tip {
   color: #ffffff;
-  font-size: 18px;
+  font-size: 22px;
 }
 
-.chart-box {
-  flex: 1;
+.score-panel {
+  width: 320px;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  gap: 20px;
 }
 
-.chart-box h3 {
-  margin: 0 0 20px 0;
-  color: #409eff;
-}
-
-.info-content {
-  height: calc(100% - 40px);
+.score-card {
+  flex: 1;
+  min-height: 150px;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 24px 20px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
-.score-display {
-  font-size: 52px;
+.score-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #409eff;
+  margin-bottom: 16px;
+}
+
+.score-value {
+  font-size: 64px;
+  line-height: 1;
   font-weight: bold;
   color: #67c23a;
-  margin-bottom: 10px;
 }
 
-.unit {
-  font-size: 22px;
+.score-unit {
+  margin-top: 8px;
+  font-size: 24px;
   color: #606266;
 }
 
-.sub-text {
-  font-size: 20px;
-  margin-top: 12px;
-  color: #606266;
+.current-score .score-value {
+  color: #409eff;
 }
 
-.safe {
+.best-score .score-value {
   color: #67c23a;
 }
 
-.danger {
+.status-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 18px;
+  font-size: 20px;
+  text-align: center;
+  font-weight: 600;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.10);
+}
+
+.safe-card {
+  color: #67c23a;
+}
+
+.danger-card {
   color: #f56c6c;
+}
+
+.stage-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 18px;
+  text-align: center;
+  color: #606266;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.10);
 }
 
 .control-buttons {
   flex: none;
-  padding: 12px 20px;
-  background: #fff;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  padding: 14px 24px;
+  background: #ffffff;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  gap: 12px;
 }
 
-.info-container {
-  flex: none;
-  padding: 12px 20px;
-  height: 35vh;
-}
-
-.info-row {
-  height: 90%;
-}
-
-.info-card {
-  height: 90%;
-  background: #fff;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-}
-
-.info-card h3 {
-  margin: 0 0 15px 0;
-  color: #409eff;
-}
-
-.chart-section {
-  flex: 1;
-  height: calc(100% - 40px);
-  width: 100%;
-  position: relative;
-}
-
-.chart-section canvas {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 100% !important;
-  height: 100% !important;
-}
-
-@media (max-width: 768px) {
-  .camera-chart-container {
-    height: 50vh;
+@media (max-width: 900px) {
+  .main-panel {
+    flex-direction: column;
   }
 
-  .camera-box {
-    width: 50%;
-    aspect-ratio: 16 / 9;
+  .score-panel {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .score-card {
+    flex: 1;
+    min-width: 220px;
   }
 }
 </style>
