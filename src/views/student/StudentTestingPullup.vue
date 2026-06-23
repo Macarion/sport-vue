@@ -284,6 +284,7 @@ const startRecord = async (uid, sport) => {
     video_ws = await connectWS(uid, sport, 'video');
     data_ws = await connectWS(uid, sport, 'data');
     console.log('video_ws实例：', video_ws);
+    speakMessage('测试开始')
 
     // 初始化录制器
     mediaRecorder = new MediaRecorder(mediaStream, {
