@@ -3,10 +3,7 @@
     <!-- 摄像头和图表区域 -->
     <div class="camera-chart-container">
       <div class="camera-box">
-        <!-- <video ref="videoElement" class="video-preview" autoplay playsinline></video> -->
-        <!-- <div v-if="isRegister">摄像头及深度神经网络初始化中...</div> -->
-        <img :src="frameSrc" style="height: 100%;" alt="实时图像" v-if="frameSrc" />
-        <div v-else class="loading">加载中...</div>
+        <video ref="resultVideo" autoplay muted playsinline style="height:100%;width:100%;object-fit:contain" />
       </div>
       <div class="chart-box">
         <h3>分数</h3>
@@ -61,30 +58,21 @@
 import {
   start_monitor_situp,
   stop_monitor_situp,
-  latest_data_situp,
-  get_img,
-  userUpdateTestingInfo,
-  userUpdateTestingImg,
 } from '@/api/user.js'
 import { ref, onMounted, onUnmounted } from 'vue'
 import Chart from 'chart.js/auto'
 import { useRouter } from 'vue-router'
 
-const speakMessage = (text) => {
-  if (!('speechSynthesis' in window)) {
-    console.warn('当前浏览器不支持语音播报')
-    return
-  }
-  window.speechSynthesis.cancel()
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = 'zh-CN'
-  window.speechSynthesis.speak(utterance)
+// 视频参数配置
+const videoParams = {
+  width: { ideal: 640 },
+  height: { ideal: 480 },
+  frameRate: { ideal: 15, max: 30 },
 }
 
 let timer1 = null
 let timer2 = null
 
-const videoElement = ref(null)
 const countChartElement = ref(null)
 const angleChartElement = ref(null)
 const cameraActive = ref(false)
@@ -98,15 +86,14 @@ const router = useRouter()
 let timestamps = []
 let angles = []
 let nums = []
-const frameSrc = ref(null)
 const isRegister = ref(false)
 const detectStarted = ref(false)
 
-let video_ws
+const resultVideo = ref(null)
+
 let data_ws
+let webrtc
 let mediaStream = null;
-let mediaRecorder = null;
-const SLICE_TIME = 33;
 
 const username = localStorage.getItem('username')
 console.log('获取到的username:', username)
@@ -150,11 +137,11 @@ const start = async () => {
     console.log('启动摄像头返回:', res)
 
     if (res.status === 200) {
-      video_ws, data_ws = startRecord(username, 'situp')
+      startRecord(username, 'situp')
+      speakMessage('测试开始')
 
       cameraActive.value = true
     }
-
 
     // // 仅在摄像头开启时启动定时器
     // if (cameraActive.value) {
@@ -178,18 +165,18 @@ const stop = async () => {
   cameraActive.value = false // 立即设置摄像头状态为关闭
   // detectStarted.value = false
   try {
-    stopRecord(video_ws)
+    stopRecord()
 
     const res = await stop_monitor_situp(username)
     console.log('关闭摄像头返回:', res)
 
-  //   // 清除定时器
-  //   if (timer1) clearInterval(timer1)
-  //   if (timer2) clearInterval(timer2)
-  //   timer1 = null
-  //   timer2 = null
+    // // 清除定时器
+    // if (timer1) clearInterval(timer1)
+    // if (timer2) clearInterval(timer2)
+    // timer1 = null
+    // timer2 = null
 
-    // 清除图表数据
+    // // 清除图表数据
     // if (countChartInstance) {
     //   countChartInstance.destroy()
     //   countChartInstance = null
@@ -201,9 +188,6 @@ const stop = async () => {
 
     // // 清除图像预览
     // cleanup()
-
-    
-    console.log('所有数据已重置')
   } catch (err) {
     console.error('关闭摄像头失败:', err)
   }
@@ -211,132 +195,134 @@ const stop = async () => {
 
 // 打开摄像头
 const openCamera = async () => {
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 15, max: 30 }
-        },
-        audio: false
-    });
-    // videoElement.value.srcObject = mediaStream;
+  mediaStream = await navigator.mediaDevices.getUserMedia({
+    video: videoParams,
+    audio: false
+  });
 }
-// 建立 WebSocket 连接（修复核心：resolve带出ws实例、变量声明、编码、onclose）
-const connectWS = (uid, sport, type) => {
-  return new Promise((resolve, reject) => {
-    // 参数编码，防止特殊字符破坏ws地址
-    const encode = (val) => encodeURIComponent(String(val));
-    const params = `${encode(sport)}_${encode(type)}_${encode(uid)}`;
-    const WS_URL = `ws://127.0.0.1:8090/ws/${params}/`;
 
-    // 局部声明ws，不污染全局
-    const ws = new WebSocket(WS_URL);
-    ws.binaryType = 'arraybuffer';
+// 建立 WebSocket 连接
+const connectDataWS = (uid, sport) => {
+
+  return new Promise((resolve, reject) => {
+
+    const params =
+      `${sport}_data_${uid}`
+
+    const ws =
+      new WebSocket(
+        `ws://127.0.0.1:8090/ws/${params}/`
+      )
+
+    ws.binaryType = 'blob'
 
     ws.onopen = () => {
-      // 关键：把ws实例传给resolve，await后能拿到操作对象
-      resolve(ws);
-    };
-
-    ws.onerror = (err) => {
-      reject(new Error(`WS连接错误: ${err.message}`));
-    };
-
-    // 监听关闭，断连抛出异常
-    ws.onclose = (event) => {
-      console.log(`WS连接关闭: ${event.code} ${event.reason}`);
-    };
+      resolve(ws)
+    }
 
     ws.onmessage = (event) => {
       try {
-        const msg = JSON.parse(event.data)
-        const result = msg.result
-        console.log(result);
+        const result = JSON.parse(event.data)
 
-        frameSrc.value = msg.painting;
-        num.value = result.score;
-        num_all.value = result.num_all;
+        num.value = result.score
+        num_all.value = result.num_all
 
-        timestamps.push(Number(result.timestamp));
-        nums.push(Number(result.score));
-        angles.push(Number(result.angle));
-        updateCharts();
+        timestamps.push(Number(result.timestamp))
+        nums.push(Number(result.score))
+        angles.push(Number(result.angle))
 
-      } catch (error) {
-        console.log(`WS消息解析错误: ${error.message}`);
+        updateCharts()
+      } catch (e) {
+        console.error(e)
       }
     }
-  });
-};
-// 开启录制，返回video、data两个ws实例
-const startRecord = async (uid, sport) => {
-  try {
-    // 先打开摄像头
-    await openCamera();
 
-    // await 现在可以拿到真实WebSocket实例
-    video_ws = await connectWS(uid, sport, 'video');
-    data_ws = await connectWS(uid, sport, 'data');
-    console.log('video_ws实例：', video_ws);
-    speakMessage('测试开始')
+    ws.onclose = () => console.log('Data WS连接已关闭')
+    ws.onerror = reject
+  })
+}
 
-    // 初始化录制器
-    mediaRecorder = new MediaRecorder(mediaStream, {
-      mimeType: 'video/webm;codecs=vp8'
-    });
 
-    // 分片回调发送二进制数据
-    mediaRecorder.ondataavailable = async (e) => {
-      // 双重判断：有数据 + ws已打开
-      if (e.data.size > 0 && video_ws.readyState === WebSocket.OPEN) {
-        const buf = await e.data.arrayBuffer();
-        video_ws.send(buf);
-      }
+const createWebRTC = async (uid) => {
+
+  let pc;
+
+  const ws = new WebSocket(
+    `ws://127.0.0.1:8090/ws/webrtc/${uid}/`
+  )
+
+  ws.onopen = async () => {
+
+    await openCamera()
+
+    pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19301' },
+        { urls: 'stun:stun.miwifi.com:3477' },
+      ]
+    })
+
+    mediaStream.getTracks().forEach(track => {
+      pc.addTrack(track, mediaStream)
+    })
+
+    pc.ontrack = (evt) => {
+      console.log("收到后端回传视频流", evt);
+      resultVideo.value.srcObject = evt.streams[0];
     };
 
-    // 定时分片录制
-    mediaRecorder.start(SLICE_TIME);
-
-    // 返回包含两个ws的对象，解决逗号表达式只返回最后一个的bug
-    return { video_ws, data_ws };
-  } catch (err) {
-    console.error('录制启动失败：', err);
-    // 出错自动释放摄像头资源兜底
-    if (mediaStream) {
-      mediaStream.getTracks().forEach(track => track.stop());
-      mediaStream = null;
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        ws.send(JSON.stringify({
+          type: "ice",
+          candidate: e.candidate
+        }))
+      }
     }
-    mediaRecorder = null;
-    throw err; // 抛出错误让外部捕获
+
+    const offer = await pc.createOffer()
+
+    await pc.setLocalDescription(offer)
+
+    ws.send(JSON.stringify({
+      type: "offer",
+      sdp: offer.sdp
+    }))
   }
-};
 
-// 停止录制，支持同时关闭video/data ws
-const stopRecord = (wsObj) => {
-  // 兼容传入 {video_ws, data_ws} 对象
-  const { video_ws, data_ws } = wsObj || {};
+  ws.onmessage = async (event) => {
 
-  // 停止录制
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop();
+    const msg = JSON.parse(event.data)
+
+    if (msg.type === "answer") {
+
+      await pc.setRemoteDescription({
+        type: "answer",
+        sdp: msg.sdp
+      })
+    }
   }
-  mediaRecorder = null;
 
-  // 关闭摄像头轨道
+  ws.onclose = () => console.log("RTC WS连接关闭");
+  ws.onerror = err => console.error("WebSocket错误", err);
+
+  return { pc, ws }
+}
+
+const startRecord = async (uid, sport) => {
+
+  webrtc = await createWebRTC(uid)
+
+  data_ws = await connectDataWS(uid, sport)
+}
+
+const stopRecord = () => {
+
   if (mediaStream) {
-    mediaStream.getTracks().forEach(track => track.stop());
-    mediaStream = null;
+    mediaStream.getTracks().forEach(track => track.stop())
   }
 
-  // 安全关闭所有websocket
-  const closeWS = (ws) => {
-    if (ws && [WebSocket.OPEN, WebSocket.CONNECTING].includes(ws.readyState)) {
-      ws.close();
-    }
-  };
-  closeWS(video_ws);
-  console.log('close video_ws', video_ws);
-};
+}
 
 const login = async () => {
   router.push('/student/test')
@@ -476,60 +462,28 @@ const formatTimestamp = (timestamp) => {
   if (!timestamp) return ''
   const date = new Date(timestamp)
   return [
-    // date.getHours().toString().padStart(2, '0'),
     date.getMinutes().toString().padStart(2, '0'),
     date.getSeconds().toString().padStart(2, '0'),
-    // date.getMilliseconds().toString().padStart(3, '0'),
   ].join(':')
 }
 
-const sendRequest = async () => {
-  if (!cameraActive.value) return // 仅在摄像头开启时发送请求
-  try {
-    const res = await latest_data_situp({ username })
-    const data = res.data || {}
-    console.log('最新数据', data)
-
-    if (data.finished) {
-      await closeCamera()
-      return
-    }
-
-    if (data.detectsuccess && !detectStarted.value) {
-      speakMessage('测试开始')
-      detectStarted.value = true
-    }
-
-    num.value = data.num
-    num_all.value = data.num_all
-    count.value = data.num
-    nums = data.nums
-    timestamps = data.timestamps
-    angles = data.angles
-    updateCharts()
-  } catch (err) {
-    console.error('获取最新数据失败:', err)
-  }
-}
 
 const cleanup = () => {
-  if (frameSrc.value) {
-    URL.revokeObjectURL(frameSrc.value)
-    frameSrc.value = null
+  if (resultVideo.value && resultVideo.value.src) {
+    URL.revokeObjectURL(resultVideo.value.src)
+    resultVideo.value.src = null
   }
 }
 
-const fetchFrame = async () => {
-  if (!cameraActive.value) return // 仅在摄像头开启时获取图像
-  try {
-    const res = await get_img()
-    if (frameSrc.value) {
-      URL.revokeObjectURL(frameSrc.value)
-    }
-    frameSrc.value = URL.createObjectURL(res.data)
-  } catch (err) {
-    console.error('图像流获取失败:', err)
+const speakMessage = (text) => {
+  if (!('speechSynthesis' in window)) {
+    console.warn('当前浏览器不支持语音播报')
+    return
   }
+  window.speechSynthesis.cancel()
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.lang = 'zh-CN'
+  window.speechSynthesis.speak(utterance)
 }
 
 onUnmounted(() => {
