@@ -3,7 +3,8 @@
     <!-- 摄像头和图表区域 -->
     <div class="camera-chart-container">
       <div class="camera-box">
-        <video ref="resultVideo" autoplay muted playsinline style="height:100%;width:100%;object-fit:contain" />
+        <video ref="resultVideo" v-show="!loading" autoplay muted playsinline style="height:100%;width:100%;object-fit:contain" />
+        <div v-show="loading">加载中...</div>
       </div>
       <div class="chart-box">
         <h3>分数</h3>
@@ -88,10 +89,10 @@ let angles = []
 let nums = []
 const isRegister = ref(false)
 const detectStarted = ref(false)
+const loading = ref(false)
 
 const resultVideo = ref(null)
 
-let data_ws
 let webrtc
 let mediaStream = null;
 
@@ -127,6 +128,7 @@ const start = async () => {
 
   // 清除图像预览
   cleanup()
+  loading.value = true
 
   try {
     // 初始化新图表
@@ -137,7 +139,7 @@ const start = async () => {
     console.log('启动摄像头返回:', res)
 
     if (res.status === 200) {
-      startRecord(username, 'situp')
+      startRecord(username)
       speakMessage('测试开始')
 
       cameraActive.value = true
@@ -155,6 +157,7 @@ const start = async () => {
   } catch (err) {
     console.error('启动摄像头失败:', err)
     cameraActive.value = false
+    loading.value = false
     // isRegister.value = false
   }
 }
@@ -164,6 +167,7 @@ const stop = async () => {
   // isRegister.value = false
   cameraActive.value = false // 立即设置摄像头状态为关闭
   // detectStarted.value = false
+  loading.value = false
   try {
     stopRecord()
 
@@ -201,48 +205,7 @@ const openCamera = async () => {
   });
 }
 
-// 建立 WebSocket 连接
-const connectDataWS = (uid, sport) => {
-
-  return new Promise((resolve, reject) => {
-
-    const params =
-      `${sport}_data_${uid}`
-
-    const ws =
-      new WebSocket(
-        `ws://127.0.0.1:8090/ws/${params}/`
-      )
-
-    ws.binaryType = 'blob'
-
-    ws.onopen = () => {
-      resolve(ws)
-    }
-
-    ws.onmessage = (event) => {
-      try {
-        const result = JSON.parse(event.data)
-
-        num.value = result.score
-        num_all.value = result.num_all
-
-        timestamps.push(Number(result.timestamp))
-        nums.push(Number(result.score))
-        angles.push(Number(result.angle))
-
-        updateCharts()
-      } catch (e) {
-        console.error(e)
-      }
-    }
-
-    ws.onclose = () => console.log('Data WS连接已关闭')
-    ws.onerror = reject
-  })
-}
-
-
+// 建立 WebRTC 与 WebSocket 连接
 const createWebRTC = async (uid) => {
 
   let pc;
@@ -255,6 +218,7 @@ const createWebRTC = async (uid) => {
 
     await openCamera()
 
+    // 创建 WebRTC RTCPeerConnection 对象
     pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19301' },
@@ -262,15 +226,19 @@ const createWebRTC = async (uid) => {
       ]
     })
 
+    // 添加本地视频流
     mediaStream.getTracks().forEach(track => {
       pc.addTrack(track, mediaStream)
     })
 
+    // 接收后端回传的视频流
     pc.ontrack = (evt) => {
       console.log("收到后端回传视频流", evt);
+      loading.value = false;
       resultVideo.value.srcObject = evt.streams[0];
     };
 
+    // 接收后端回传的ICE候选
     pc.onicecandidate = (e) => {
       if (e.candidate) {
         ws.send(JSON.stringify({
@@ -280,6 +248,7 @@ const createWebRTC = async (uid) => {
       }
     }
 
+    // 发送 WebRTC offer
     const offer = await pc.createOffer()
 
     await pc.setLocalDescription(offer)
@@ -290,16 +259,32 @@ const createWebRTC = async (uid) => {
     }))
   }
 
+  // WebSocket 接收消息
   ws.onmessage = async (event) => {
 
     const msg = JSON.parse(event.data)
 
     if (msg.type === "answer") {
 
+      // WebRTC 回传的应答消息
       await pc.setRemoteDescription({
         type: "answer",
         sdp: msg.sdp
       })
+    }
+    else if (msg.type === "data") {
+
+      // 接收数据并展示
+      const result = JSON.parse(msg.data)
+
+      num.value = result.score
+      num_all.value = result.num_all
+
+      timestamps.push(Number(result.timestamp))
+      nums.push(Number(result.score))
+      angles.push(Number(result.angle))
+
+      updateCharts()
     }
   }
 
@@ -309,11 +294,10 @@ const createWebRTC = async (uid) => {
   return { pc, ws }
 }
 
-const startRecord = async (uid, sport) => {
+const startRecord = async (uid) => {
 
   webrtc = await createWebRTC(uid)
 
-  data_ws = await connectDataWS(uid, sport)
 }
 
 const stopRecord = () => {
