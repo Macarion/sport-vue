@@ -16,38 +16,14 @@
 
       <div class="chart-box status-card">
         <h3>跳远状态</h3>
-        <div class="status-content">
-          <div class="status-heading">
-            <span class="status-dot" :class="stateClass"></span>
+        <div class="status-content status-content--center">
+          <div class="status-heading status-heading--large">
+            <span class="status-dot status-dot--large" :class="stateClass"></span>
             <span>{{ stateLabel }}</span>
           </div>
-          <div class="status-message">{{ statusMessage }}</div>
-
-          <div class="status-list">
-            <div class="status-row">
-              <span>ArUco</span>
-              <strong>{{ arucoStatus }}</strong>
-            </div>
-            <div class="status-row">
-              <span>当前帧</span>
-              <strong>{{ frameLabel }}</strong>
-            </div>
-            <div class="status-row">
-              <span>视频通道</span>
-              <strong>{{ wsStatus.video }}</strong>
-            </div>
-            <div class="status-row">
-              <span>数据通道</span>
-              <strong>{{ wsStatus.data }}</strong>
-            </div>
-            <div class="status-row">
-              <span>流状态</span>
-              <strong>{{ streamStatus }}</strong>
-            </div>
-            <div class="status-row">
-              <span>成绩</span>
-              <strong>{{ scoreDisplay }}</strong>
-            </div>
+          <div class="status-score">
+            <span>成绩</span>
+            <strong>{{ scoreDisplay }}</strong>
           </div>
         </div>
       </div>
@@ -77,9 +53,32 @@
           </div>
         </el-col>
         <el-col :span="8">
-          <div class="info-card">
-            <div class="chart-section">
-              <canvas ref="angleChartElement"></canvas>
+          <div class="info-card prompt-card">
+            <h3>跳远提示</h3>
+            <div class="prompt-content">
+              <div class="prompt-message">{{ statusMessage }}</div>
+              <div class="prompt-list">
+                <div class="prompt-row">
+                  <span>ArUco</span>
+                  <strong>{{ arucoStatus }}</strong>
+                </div>
+                <div class="prompt-row">
+                  <span>当前帧</span>
+                  <strong>{{ frameLabel }}</strong>
+                </div>
+                <div class="prompt-row">
+                  <span>视频通道</span>
+                  <strong>{{ wsStatus.video }}</strong>
+                </div>
+                <div class="prompt-row">
+                  <span>数据通道</span>
+                  <strong>{{ wsStatus.data }}</strong>
+                </div>
+                <div class="prompt-row">
+                  <span>流状态</span>
+                  <strong>{{ streamStatus }}</strong>
+                </div>
+              </div>
             </div>
           </div>
         </el-col>
@@ -97,22 +96,57 @@ import { start_monitor_standjump, stop_monitor_standjump } from '@/api/user.js'
 const STATE_LABELS = {
   IDLE: '未开始',
   STARTING: '启动中',
-  CALIBRATING: '场景检测',
-  WAITING_READY: '起跳准备',
-  ARMED: '可以起跳',
+  CALIBRATING: '场景检测中',
+  WAITING_READY: '起跳准备中',
+  ARMED: '可以开始起跳',
   IN_JUMP: '跳跃中',
-  PROCESSING: '成绩计算',
-  RESULT: '完成',
-  FAILED: '失败',
+  PROCESSING: '成绩计算中',
+  RESULT: '测试完成',
+  FAILED: '检测失败',
   STOPPED: '已停止',
 }
 
-const speakMessage = (text) => {
-  if (!('speechSynthesis' in window)) return
+const VOICE_BY_STATE = {
+  CALIBRATING: '开始进行场景检测',
+  ARMED: '可以开始起跳',
+  RESULT: '成绩计算完成',
+  FAILED: '检测失败，请重新开始',
+}
+
+const VOICE_REPEAT_GAP_MS = 1500
+
+let spokenStates = new Set()
+let lastSpokenText = ''
+let lastSpokenAt = 0
+
+const cancelSpeech = () => {
+  if ('speechSynthesis' in window) window.speechSynthesis.cancel()
+}
+
+const speakMessage = (text, { force = false } = {}) => {
+  if (!text || !('speechSynthesis' in window)) return
+  const now = Date.now()
+  if (!force && text === lastSpokenText && now - lastSpokenAt < VOICE_REPEAT_GAP_MS) return
+  lastSpokenText = text
+  lastSpokenAt = now
   window.speechSynthesis.cancel()
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.lang = 'zh-CN'
   window.speechSynthesis.speak(utterance)
+}
+
+const resetVoiceState = () => {
+  spokenStates = new Set()
+  lastSpokenText = ''
+  lastSpokenAt = 0
+  cancelSpeech()
+}
+
+const speakForJumpState = (state) => {
+  const text = VOICE_BY_STATE[state]
+  if (!text || spokenStates.has(state)) return
+  spokenStates.add(state)
+  speakMessage(text)
 }
 
 const router = useRouter()
@@ -120,7 +154,6 @@ const username = localStorage.getItem('username')
 
 const videoElement = ref(null)
 const countChartElement = ref(null)
-const angleChartElement = ref(null)
 const cameraActive = ref(false)
 const frameSrc = ref('')
 const jumpState = ref('IDLE')
@@ -131,10 +164,8 @@ const streamStatus = ref('-')
 const wsStatus = ref({ video: '未连接', data: '未连接' })
 
 let countChartInstance = null
-let angleChartInstance = null
 let timestamps = []
 let scores = []
-let angles = []
 let mediaStream = null
 let mediaRecorder = null
 let wsBundle = null
@@ -163,9 +194,9 @@ const setWsStatus = (type, value) => {
 
 const resetRunState = () => {
   cleanupFrame()
+  resetVoiceState()
   timestamps = []
   scores = []
-  angles = []
   frameId.value = null
   scoreValue.value = null
   streamStatus.value = '-'
@@ -173,7 +204,6 @@ const resetRunState = () => {
   statusMessage.value = '正在启动跳远检测服务'
   wsStatus.value = { video: '未连接', data: '未连接' }
   initCountChart()
-  initAngleChart()
 }
 
 const start = async () => {
@@ -192,6 +222,7 @@ const start = async () => {
     console.error('启动跳远检测失败:', err)
     statusMessage.value = err?.message || '启动跳远检测失败'
     jumpState.value = 'FAILED'
+    speakForJumpState('FAILED')
     cameraActive.value = false
     stopRecord(wsBundle)
     wsBundle = null
@@ -200,7 +231,7 @@ const start = async () => {
 }
 
 const stop = async () => {
-  speakMessage('测试已结束')
+  speakMessage('测试已结束', { force: true })
   cameraActive.value = false
   jumpState.value = 'STOPPED'
   statusMessage.value = '正在关闭摄像头和检测服务'
@@ -222,8 +253,9 @@ const openCamera = async () => {
   if (mediaStream) return
   mediaStream = await navigator.mediaDevices.getUserMedia({
     video: {
-      width: 640,
-      height: 480,
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 15, max: 20 },
     },
     audio: false,
   })
@@ -281,7 +313,9 @@ const startRecord = async (uid, sport) => {
   data_ws = await connectWS(uid, sport, 'data')
 
   const mimeType = 'video/webm;codecs=vp8'
-  const options = MediaRecorder.isTypeSupported(mimeType) ? { mimeType } : undefined
+  const options = MediaRecorder.isTypeSupported(mimeType)
+    ? { mimeType, videoBitsPerSecond: 4_000_000 }
+    : { videoBitsPerSecond: 4_000_000 }
   mediaRecorder = new MediaRecorder(mediaStream, options)
 
   mediaRecorder.ondataavailable = async (event) => {
@@ -336,7 +370,6 @@ const handleWsMessage = (msg) => {
 const handleBackendData = (data) => {
   if (!data || typeof data !== 'object') return
 
-  const previousState = jumpState.value
   if (data.state) jumpState.value = data.state
   if (data.message) statusMessage.value = data.message
   if (data.frame_id !== undefined && data.frame_id !== null) frameId.value = data.frame_id
@@ -349,10 +382,7 @@ const handleBackendData = (data) => {
     pushScore(score)
   }
 
-  if (jumpState.value !== previousState) {
-    if (jumpState.value === 'ARMED') speakMessage('可以开始起跳')
-    if (jumpState.value === 'RESULT') speakMessage('成绩计算完成')
-  }
+  if (data.state) speakForJumpState(data.state)
 }
 
 const updateStreamStatus = (stats) => {
@@ -372,7 +402,6 @@ const updateStreamStatus = (stats) => {
 const pushScore = (score) => {
   timestamps.push(Date.now())
   scores.push(score)
-  angles.push(0)
   updateCharts()
 }
 
@@ -410,36 +439,6 @@ const initCountChart = () => {
   })
 }
 
-const initAngleChart = () => {
-  if (!angleChartElement.value) return
-  if (angleChartInstance) angleChartInstance.destroy()
-  angleChartInstance = new Chart(angleChartElement.value.getContext('2d'), {
-    type: 'line',
-    data: {
-      labels: [],
-      datasets: [
-        {
-          label: '暂无指标',
-          data: [],
-          borderColor: '#67c23a',
-          backgroundColor: 'rgba(103, 194, 58, 0.2)',
-          fill: true,
-          tension: 0,
-          pointRadius: 0,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: { title: { display: true, text: '时间' }, ticks: { autoSkip: true, maxRotation: 0 } },
-        y: {},
-      },
-    },
-  })
-}
-
 const updateCharts = () => {
   const maxPoints = 100
   const visibleTimestamps = timestamps.slice(-maxPoints)
@@ -449,12 +448,6 @@ const updateCharts = () => {
     countChartInstance.data.labels = labels
     countChartInstance.data.datasets[0].data = scores.slice(-maxPoints)
     countChartInstance.update()
-  }
-
-  if (angleChartInstance) {
-    angleChartInstance.data.labels = labels
-    angleChartInstance.data.datasets[0].data = angles.slice(-maxPoints)
-    angleChartInstance.update()
   }
 }
 
@@ -472,17 +465,13 @@ const cleanupFrame = () => {
 
 onMounted(() => {
   initCountChart()
-  initAngleChart()
 })
 
 onUnmounted(() => {
+  cancelSpeech()
   if (countChartInstance) {
     countChartInstance.destroy()
     countChartInstance = null
-  }
-  if (angleChartInstance) {
-    angleChartInstance.destroy()
-    angleChartInstance = null
   }
   stopRecord(wsBundle)
   wsBundle = null
@@ -542,6 +531,13 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
+.status-content--center {
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  text-align: center;
+}
+
 .status-heading {
   display: flex;
   align-items: center;
@@ -551,12 +547,23 @@ onUnmounted(() => {
   color: #303133;
 }
 
+.status-heading--large {
+  gap: 14px;
+  font-size: 34px;
+  line-height: 1.2;
+}
+
 .status-dot {
   width: 12px;
   height: 12px;
   border-radius: 50%;
   background: #909399;
   flex: 0 0 auto;
+}
+
+.status-dot--large {
+  width: 16px;
+  height: 16px;
 }
 
 .state-calibrating,
@@ -582,32 +589,62 @@ onUnmounted(() => {
   background: #f56c6c;
 }
 
-.status-message {
-  margin: 14px 0 18px;
-  min-height: 44px;
-  line-height: 1.5;
-  color: #606266;
+.status-score {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: #909399;
   font-size: 15px;
 }
 
-.status-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.status-score strong {
+  color: #67c23a;
+  font-size: 30px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
 }
 
-.status-row {
+.prompt-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.prompt-content {
+  height: calc(100% - 40px);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.prompt-message {
+  min-height: 48px;
+  line-height: 1.5;
+  color: #303133;
+  font-size: 15px;
+  padding: 2px 0 12px;
+  overflow-wrap: anywhere;
+}
+
+.prompt-list {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.prompt-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 0;
+  padding: 7px 0;
   border-bottom: 1px solid #ebeef5;
   color: #909399;
   font-size: 14px;
 }
 
-.status-row strong {
+.prompt-row strong {
   color: #303133;
   font-weight: 600;
   text-align: right;
@@ -632,7 +669,7 @@ onUnmounted(() => {
 .video-preview {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 
@@ -701,6 +738,14 @@ onUnmounted(() => {
 
   .status-heading {
     font-size: 20px;
+  }
+
+  .status-heading--large {
+    font-size: 26px;
+  }
+
+  .status-score strong {
+    font-size: 24px;
   }
 
   .count-display {
