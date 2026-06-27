@@ -32,6 +32,9 @@
     <div class="control-buttons">
       <el-button type="primary" @click="start" :disabled="cameraActive">开启摄像头</el-button>
       <el-button type="danger" @click="stop" :disabled="!cameraActive">关闭摄像头</el-button>
+      <el-select v-model="selectedDeviceId" placeholder="选择摄像头" style="width: 15rem; margin:0 10px;" :disabled="cameraActive">
+        <el-option v-for="cam in cameraList" :key="cam.deviceId" :label="cam.label || `摄像头${camIndex++}`" :value="cam.deviceId"/>
+      </el-select>
       <el-button @click="login">返回</el-button>
     </div>
 
@@ -152,6 +155,11 @@ const speakForJumpState = (state) => {
 const router = useRouter()
 const username = localStorage.getItem('username')
 
+// 摄像头列表与选中设备
+const cameraList = ref([])
+const selectedDeviceId = ref('')
+let camIndex = 1
+
 const videoElement = ref(null)
 const countChartElement = ref(null)
 const cameraActive = ref(false)
@@ -249,16 +257,36 @@ const stop = async () => {
   }
 }
 
+// 加载所有摄像头设备列表
+const loadCameraList = async () => {
+  try {
+    // 临时获取权限才能拿到完整label
+    const tempStream = await navigator.mediaDevices.getUserMedia({ video:true })
+    tempStream.getTracks().forEach(t=>t.stop())
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    cameraList.value = devices.filter(d=>d.kind === 'videoinput')
+    if(cameraList.value.length) selectedDeviceId.value = cameraList.value[0].deviceId
+  } catch (err) {
+    console.error('获取摄像头列表失败', err)
+  }
+}
+
 const openCamera = async () => {
   if (mediaStream) return
-  mediaStream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      frameRate: { ideal: 15, max: 20 },
-    },
-    audio: false,
-  })
+  const constraints = {
+      video: {
+        width: 1280,
+        height: 720,
+        frameRate: { ideal: 15, max: 20 },
+      },
+      audio: false
+  };
+
+  // 如果选中了摄像头deviceId则指定设备
+  if (selectedDeviceId.value) {
+    constraints.video.deviceId = { exact: selectedDeviceId.value }
+  }
+  mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
 
   await nextTick()
   if (videoElement.value) {
@@ -465,6 +493,7 @@ const cleanupFrame = () => {
 
 onMounted(() => {
   initCountChart()
+  loadCameraList()
 })
 
 onUnmounted(() => {

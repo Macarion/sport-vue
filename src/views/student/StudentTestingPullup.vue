@@ -20,6 +20,9 @@
     <div class="control-buttons">
       <el-button type="primary" @click="start" :disabled="cameraActive">开启摄像头</el-button>
       <el-button type="danger" @click="stop" :disabled="!cameraActive">关闭摄像头</el-button>
+      <el-select v-model="selectedDeviceId" placeholder="选择摄像头" style="width: 15rem; margin:0 10px;" :disabled="cameraActive">
+        <el-option v-for="cam in cameraList" :key="cam.deviceId" :label="cam.label || `摄像头${camIndex++}`" :value="cam.deviceId"/>
+      </el-select>
       <el-button @click="login">返回</el-button>
     </div>
 
@@ -65,10 +68,13 @@ import Chart from 'chart.js/auto'
 import { useRouter } from 'vue-router'
 
 // 视频参数配置
-const videoParams = {
-  width: { ideal: 640 },
-  height: { ideal: 480 },
-  frameRate: { ideal: 15, max: 30 },
+let mediaParams = {
+  video: {
+    width: { ideal: 640 },
+    height: { ideal: 480 },
+    frameRate: { ideal: 15, max: 30 },
+  },
+  audio: false,
 }
 
 let timer1 = null
@@ -92,6 +98,10 @@ const detectStarted = ref(false)
 const cameraStarted = ref(false)
 const loading = ref(false)
 
+// 摄像头列表与选中设备
+const cameraList = ref([])
+const selectedDeviceId = ref('')
+let camIndex = 1
 const resultVideo = ref(null)
 
 let webrtc
@@ -204,12 +214,27 @@ const stop = async (shouldStopBackend = true) => {
   }
 }
 
+// 加载所有摄像头设备列表
+const loadCameraList = async () => {
+  try {
+    // 临时获取权限才能拿到完整label
+    const tempStream = await navigator.mediaDevices.getUserMedia({ video:true })
+    tempStream.getTracks().forEach(t=>t.stop())
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    cameraList.value = devices.filter(d=>d.kind === 'videoinput')
+    if(cameraList.value.length) selectedDeviceId.value = cameraList.value[0].deviceId
+  } catch (err) {
+    console.error('获取摄像头列表失败', err)
+  }
+}
+
 // 打开摄像头
 const openCamera = async () => {
-  mediaStream = await navigator.mediaDevices.getUserMedia({
-    video: videoParams,
-    audio: false
-  });
+  // 如果选中了摄像头deviceId则指定设备
+  if (selectedDeviceId.value) {
+    mediaParams.video.deviceId = { exact: selectedDeviceId.value }
+  }
+  mediaStream = await navigator.mediaDevices.getUserMedia(mediaParams);
 }
 
 // 建立 WebRTC 与 WebSocket 连接
@@ -500,6 +525,7 @@ onUnmounted(() => {
 onMounted(() => {
   initCountChart()
   initAngleChart()
+  loadCameraList()
 })
 </script>
 
