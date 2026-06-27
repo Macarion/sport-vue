@@ -210,9 +210,6 @@ const stop = async () => {
 // 加载所有摄像头设备列表
 const loadCameraList = async () => {
   try {
-    // 临时获取权限才能拿到完整label
-    const tempStream = await navigator.mediaDevices.getUserMedia({ video:true })
-    tempStream.getTracks().forEach(t=>t.stop())
     const devices = await navigator.mediaDevices.enumerateDevices()
     cameraList.value = devices.filter(d=>d.kind === 'videoinput')
     if(cameraList.value.length) selectedDeviceId.value = cameraList.value[0].deviceId
@@ -254,6 +251,9 @@ const createWebRTC = async (uid) => {
     // 添加本地视频流
     mediaStream.getTracks().forEach(track => {
       pc.addTrack(track, mediaStream)
+      if (track.kind === 'video') {
+        track.contentHint = 'detail'
+      }
     })
 
     // 接收后端回传的视频流

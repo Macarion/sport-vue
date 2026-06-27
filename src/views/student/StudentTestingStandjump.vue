@@ -2,16 +2,15 @@
   <div class="container">
     <div class="camera-chart-container">
       <div class="camera-box">
-        <img v-if="frameSrc" :src="frameSrc" alt="实时图像" class="video-preview" />
         <video
-          v-show="cameraActive && !frameSrc"
+          v-show="cameraActive"
           ref="videoElement"
           class="video-preview"
           autoplay
           muted
           playsinline
         ></video>
-        <div v-if="!cameraActive && !frameSrc" class="loading">点击开启摄像头</div>
+        <div v-if="!cameraActive" class="loading">点击开启摄像头</div>
       </div>
 
       <div class="chart-box status-card">
@@ -154,6 +153,7 @@ const speakForJumpState = (state) => {
 
 const router = useRouter()
 const username = localStorage.getItem('username')
+const loading = ref(false)
 
 // 摄像头列表与选中设备
 const cameraList = ref([])
@@ -163,7 +163,6 @@ let camIndex = 1
 const videoElement = ref(null)
 const countChartElement = ref(null)
 const cameraActive = ref(false)
-const frameSrc = ref('')
 const jumpState = ref('IDLE')
 const statusMessage = ref('点击开启摄像头')
 const frameId = ref(null)
@@ -171,16 +170,11 @@ const scoreValue = ref(null)
 const streamStatus = ref('-')
 const wsStatus = ref({ video: '未连接', data: '未连接' })
 
+let webrtc
 let countChartInstance = null
 let timestamps = []
 let scores = []
 let mediaStream = null
-let mediaRecorder = null
-let wsBundle = null
-let video_ws = null
-let data_ws = null
-
-const SLICE_TIME = 33
 
 const stateLabel = computed(() => STATE_LABELS[jumpState.value] || jumpState.value || '-')
 const stateClass = computed(() => `state-${String(jumpState.value || 'IDLE').toLowerCase().replaceAll('_', '-')}`)
@@ -196,8 +190,8 @@ const arucoStatus = computed(() => {
   return '-'
 })
 
-const setWsStatus = (type, value) => {
-  wsStatus.value = { ...wsStatus.value, [type]: value }
+const setWsStatus = (value) => {
+  wsStatus.value = { video: value, data: value }
 }
 
 const resetRunState = () => {
@@ -224,7 +218,7 @@ const start = async () => {
 
     cameraActive.value = true
     statusMessage.value = '正在打开摄像头'
-    wsBundle = await startRecord(username, 'jump')
+    await startRecord(username)
     statusMessage.value = '摄像头已开启，请保持 ArUco 标记可见'
   } catch (err) {
     console.error('启动跳远检测失败:', err)
@@ -232,8 +226,7 @@ const start = async () => {
     jumpState.value = 'FAILED'
     speakForJumpState('FAILED')
     cameraActive.value = false
-    stopRecord(wsBundle)
-    wsBundle = null
+    stopRecord()
     stop_monitor_standjump(username).catch(() => {})
   }
 }
@@ -243,9 +236,9 @@ const stop = async () => {
   cameraActive.value = false
   jumpState.value = 'STOPPED'
   statusMessage.value = '正在关闭摄像头和检测服务'
+  loading.value = false
 
-  stopRecord(wsBundle)
-  wsBundle = null
+  stopRecord()
   cleanupFrame()
 
   try {
@@ -260,9 +253,6 @@ const stop = async () => {
 // 加载所有摄像头设备列表
 const loadCameraList = async () => {
   try {
-    // 临时获取权限才能拿到完整label
-    const tempStream = await navigator.mediaDevices.getUserMedia({ video:true })
-    tempStream.getTracks().forEach(t=>t.stop())
     const devices = await navigator.mediaDevices.enumerateDevices()
     cameraList.value = devices.filter(d=>d.kind === 'videoinput')
     if(cameraList.value.length) selectedDeviceId.value = cameraList.value[0].deviceId
@@ -297,102 +287,119 @@ const openCamera = async () => {
   }
 }
 
-const connectWS = (uid, sport, type) => {
-  return new Promise((resolve, reject) => {
-    const encode = (val) => encodeURIComponent(String(val))
-    const params = `${encode(sport)}_${encode(type)}_${encode(uid)}`
-    const ws = new WebSocket(`ws://127.0.0.1:8090/ws/${params}/`)
-    let settled = false
+// 建立 WebRTC 与 WebSocket 连接
+const createWebRTC = async (uid) => {
 
-    ws.binaryType = 'arraybuffer'
-    setWsStatus(type, '连接中')
+  let pc;
+  let settled = false
 
-    ws.onopen = () => {
-      settled = true
-      setWsStatus(type, '已连接')
-      resolve(ws)
-    }
+  const ws = new WebSocket(
+    `ws://127.0.0.1:8090/ws/webrtc/${uid}/`
+  )
+  setWsStatus('连接中')
 
-    ws.onerror = () => {
-      setWsStatus(type, '错误')
-      if (!settled) reject(new Error(`${type} WebSocket 连接失败`))
-    }
+  ws.onopen = async () => {
 
-    ws.onclose = () => {
-      setWsStatus(type, '已关闭')
-    }
+    await openCamera()
 
-    if (type === 'data') {
-      ws.onmessage = (event) => {
-        try {
-          handleWsMessage(JSON.parse(event.data))
-        } catch (error) {
-          console.error('跳远数据解析失败:', error)
-        }
+    // 创建 WebRTC RTCPeerConnection 对象
+    pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19301' },
+        { urls: 'stun:stun.miwifi.com:3477' },
+      ]
+    })
+
+    // 添加本地视频流
+    mediaStream.getTracks().forEach(track => {
+      pc.addTrack(track, mediaStream)
+      if (track.kind === 'video') {
+        track.contentHint = 'detail'
+      }
+    })
+
+    // 接收后端回传的视频流
+    pc.ontrack = (evt) => {
+      console.log("收到后端回传视频流", evt);
+      loading.value = false;
+      videoElement.value.srcObject = evt.streams[0];
+    };
+
+    // 接收后端回传的ICE候选
+    pc.onicecandidate = (e) => {
+      if (e.candidate) {
+        ws.send(JSON.stringify({
+          type: "ice",
+          candidate: e.candidate
+        }))
       }
     }
-  })
-}
 
-const startRecord = async (uid, sport) => {
-  await openCamera()
+    // 发送 WebRTC offer
+    const offer = await pc.createOffer()
 
-  video_ws = await connectWS(uid, sport, 'video')
-  data_ws = await connectWS(uid, sport, 'data')
+    await pc.setLocalDescription(offer)
 
-  const mimeType = 'video/webm;codecs=vp8'
-  const options = MediaRecorder.isTypeSupported(mimeType)
-    ? { mimeType, videoBitsPerSecond: 4_000_000 }
-    : { videoBitsPerSecond: 4_000_000 }
-  mediaRecorder = new MediaRecorder(mediaStream, options)
-
-  mediaRecorder.ondataavailable = async (event) => {
-    if (!event.data?.size || video_ws?.readyState !== WebSocket.OPEN) return
-    const buf = await event.data.arrayBuffer()
-    video_ws.send(buf)
+    ws.send(JSON.stringify({
+      type: "offer",
+      sdp: offer.sdp
+    }))
+    settled = true
+    setWsStatus('已连接')
   }
 
-  mediaRecorder.start(SLICE_TIME)
-  return { video_ws, data_ws }
+  // WebSocket 接收消息
+  ws.onmessage = async (event) => {
+
+    const msg = JSON.parse(event.data)
+
+    if (msg.type === "answer") {
+
+      // WebRTC 回传的应答消息
+      await pc.setRemoteDescription({
+        type: "answer",
+        sdp: msg.sdp
+      })
+    }
+    else if (msg.type === "data") {
+
+      // 接收数据并展示
+      try {
+        handleWsMessage(JSON.parse(msg.data))
+      } catch (error) {
+        console.error('跳远数据解析失败:', error)
+      }
+    }
+  }
+
+  ws.onclose = () => {
+    setWsStatus('已关闭')
+  }
+  ws.onerror = err => {
+    setWsStatus('错误')
+    if (!settled) reject(new Error(`${type} WebSocket 连接失败`))
+  }
+
+  return { pc, ws }
 }
 
-const stopRecord = (bundle) => {
-  const currentVideoWs = bundle?.video_ws || video_ws
-  const currentDataWs = bundle?.data_ws || data_ws
+const startRecord = async (uid) => {
 
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop()
-  }
-  mediaRecorder = null
+  webrtc = await createWebRTC(uid)
 
+}
+
+const stopRecord = () => {
   if (mediaStream) {
     mediaStream.getTracks().forEach((track) => track.stop())
     mediaStream = null
   }
-  if (videoElement.value) {
-    videoElement.value.srcObject = null
-  }
 
-  const closeWS = (ws) => {
-    if (ws && [WebSocket.OPEN, WebSocket.CONNECTING].includes(ws.readyState)) {
-      ws.close()
-    }
-  }
-  closeWS(currentVideoWs)
-  closeWS(currentDataWs)
-
-  video_ws = null
-  data_ws = null
-  setWsStatus('video', '已关闭')
-  setWsStatus('data', '已关闭')
+  setWsStatus('已关闭')
 }
 
 const handleWsMessage = (msg) => {
-  if (msg?.painting) {
-    cleanupFrame()
-    frameSrc.value = msg.painting
-  }
-  handleBackendData(msg?.result || msg || {})
+  handleBackendData(msg)
 }
 
 const handleBackendData = (data) => {
@@ -485,10 +492,10 @@ const formatElapsed = (elapsedMs) => {
 }
 
 const cleanupFrame = () => {
-  if (frameSrc.value?.startsWith('blob:')) {
-    URL.revokeObjectURL(frameSrc.value)
+  if (videoElement.value && videoElement.value.src) {
+    URL.revokeObjectURL(videoElement.value.src)
+    videoElement.value.src = null
   }
-  frameSrc.value = ''
 }
 
 onMounted(() => {
@@ -502,8 +509,7 @@ onUnmounted(() => {
     countChartInstance.destroy()
     countChartInstance = null
   }
-  stopRecord(wsBundle)
-  wsBundle = null
+  stopRecord()
   cleanupFrame()
   if (cameraActive.value) {
     stop_monitor_standjump(username).catch((err) => console.error('停止跳远检测失败:', err))
@@ -696,7 +702,7 @@ onUnmounted(() => {
 }
 
 .video-preview {
-  width: auto;
+  width: 100%;
   height: 100%;
   object-fit: contain;
   display: block;
