@@ -3,8 +3,7 @@
     <!-- 摄像头和图表区域 -->
     <div class="camera-chart-container">
       <div class="camera-box">
-        <video ref="resultVideo" v-show="!loading" autoplay muted playsinline style="height:100%;width:100%;object-fit:contain" />
-        <div v-show="loading">加载中...</div>
+        <video ref="resultVideo" autoplay muted playsinline style="height:100%;width:100%;object-fit:contain" />
       </div>
       <div class="chart-box">
         <h3>分数</h3>
@@ -33,9 +32,15 @@
           <div class="info-card">
             <h3>个数记录</h3>
             <div class="info-content">
-              <div class="count-display">{{ num }}</div>
+              <div>
+                <span class="count-info">有效成绩：</span>
+                <span class="count-display">{{ num }}</span>
+              </div>
               <hr width="30%" color="green" size="3px" align="center" />
-              <div class="count-display">{{ num_all }}</div>
+              <div>
+                <span class="count-info">总个数：</span>
+                <span class="count-display">{{ num_all }}</span>
+              </div>
             </div>
           </div>
         </el-col>
@@ -96,7 +101,6 @@ let nums = []
 const isRegister = ref(false)
 const detectStarted = ref(false)
 const cameraStarted = ref(false)
-const loading = ref(false)
 
 // 摄像头列表与选中设备
 const cameraList = ref([])
@@ -140,7 +144,6 @@ const start = async () => {
 
   // 清除图像预览
   cleanup()
-  loading.value = true
 
   try {
     // 初始化新图表
@@ -152,7 +155,6 @@ const start = async () => {
 
     if (res.status === 200) {
       startRecord(username)
-      speakMessage('测试开始')
 
       cameraActive.value = true
     }
@@ -169,7 +171,6 @@ const start = async () => {
   } catch (err) {
     console.error('启动摄像头失败:', err)
     cameraActive.value = false
-    loading.value = false
     isRegister.value = false
   }
 }
@@ -180,7 +181,6 @@ const stop = async (shouldStopBackend = true) => {
   cameraActive.value = false // 立即设置摄像头状态为关闭
   detectStarted.value = false
   cameraStarted.value = false
-  loading.value = false
   try {
     if (shouldStopBackend) {
       stopRecord()
@@ -232,6 +232,7 @@ const openCamera = async () => {
     mediaParams.video.deviceId = { exact: selectedDeviceId.value }
   }
   mediaStream = await navigator.mediaDevices.getUserMedia(mediaParams);
+  resultVideo.value.srcObject = mediaStream;
 }
 
 // 建立 WebRTC 与 WebSocket 连接
@@ -266,8 +267,8 @@ const createWebRTC = async (uid) => {
     // 接收后端回传的视频流
     pc.ontrack = (evt) => {
       console.log("收到后端回传视频流", evt);
-      loading.value = false;
       resultVideo.value.srcObject = evt.streams[0];
+      speakMessage('测试开始')
     };
 
     // 接收后端回传的ICE候选
@@ -625,13 +626,21 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
+}
+
+.count-info {
+  font-size: 24px;
+  font-weight: bold;
+  color: #67c23a;
+  vertical-align: middle;
 }
 
 .count-display {
   font-size: 48px;
   font-weight: bold;
   color: #67c23a;
-  margin-bottom: 10px;
+  vertical-align: middle;
 }
 
 .record-details {

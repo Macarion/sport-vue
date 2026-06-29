@@ -153,7 +153,6 @@ const speakForJumpState = (state) => {
 
 const router = useRouter()
 const username = localStorage.getItem('username')
-const loading = ref(false)
 
 // 摄像头列表与选中设备
 const cameraList = ref([])
@@ -236,7 +235,6 @@ const stop = async () => {
   cameraActive.value = false
   jumpState.value = 'STOPPED'
   statusMessage.value = '正在关闭摄像头和检测服务'
-  loading.value = false
 
   stopRecord()
   cleanupFrame()
@@ -321,7 +319,6 @@ const createWebRTC = async (uid) => {
     // 接收后端回传的视频流
     pc.ontrack = (evt) => {
       console.log("收到后端回传视频流", evt);
-      loading.value = false;
       videoElement.value.srcObject = evt.streams[0];
     };
 
