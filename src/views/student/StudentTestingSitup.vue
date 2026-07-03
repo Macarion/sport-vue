@@ -174,7 +174,7 @@ const start = async () => {
 }
 
 const stop = async () => {
-  speakMessage('测试已结束')
+  speakMessage('测试已结束，您的成绩为：' + num.value + '个')
   // isRegister.value = false
   cameraActive.value = false // 立即设置摄像头状态为关闭
   // detectStarted.value = false
