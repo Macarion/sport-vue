@@ -35,6 +35,7 @@
         <el-option v-for="cam in cameraList" :key="cam.deviceId" :label="cam.label || `摄像头${camIndex++}`" :value="cam.deviceId"/>
       </el-select>
       <el-button @click="login">返回</el-button>
+      <el-button type="success" @click="downloadOriginVideo" :disabled="cameraActive || !hasRecordedVideo" style="float: right;">下载原视频</el-button>
     </div>
 
     <div class="info-container">
@@ -174,6 +175,9 @@ let countChartInstance = null
 let timestamps = []
 let scores = []
 let mediaStream = null
+let mediaRecorder = null
+let recordedChunks = []
+let hasRecordedVideo = ref(false)
 
 const stateLabel = computed(() => STATE_LABELS[jumpState.value] || jumpState.value || '-')
 const stateClass = computed(() => `state-${String(jumpState.value || 'IDLE').toLowerCase().replaceAll('_', '-')}`)
@@ -285,6 +289,26 @@ const openCamera = async () => {
   }
 }
 
+const startLocalRecording = () => {
+  // 初始化视频录制
+  recordedChunks = []
+  mediaRecorder = new MediaRecorder(mediaStream, {
+                    mimeType: 'video/mp4'
+                })
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data.size > -1) recordedChunks.push(e.data)
+  }
+  mediaRecorder.start()
+}
+
+const stopLocalRecording = () => {
+  // 停止视频录制
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop()
+  }
+  hasRecordedVideo.value = true
+}
+
 // 建立 WebRTC 与 WebSocket 连接
 const createWebRTC = async (uid) => {
 
@@ -299,6 +323,7 @@ const createWebRTC = async (uid) => {
   ws.onopen = async () => {
 
     await openCamera()
+    startLocalRecording()
 
     // 创建 WebRTC RTCPeerConnection 对象
     pc = new RTCPeerConnection({
@@ -387,6 +412,8 @@ const startRecord = async (uid) => {
 }
 
 const stopRecord = () => {
+  // 停止录制
+  stopLocalRecording();
   if (mediaStream) {
     mediaStream.getTracks().forEach((track) => track.stop())
     mediaStream = null
@@ -435,6 +462,28 @@ const pushScore = (score) => {
   timestamps.push(Date.now())
   scores.push(score)
   updateCharts()
+}
+
+// 下载原视频方法
+const downloadOriginVideo = () => {
+  if (!recordedChunks.length) return
+  // 生成文件名 standjump_年月日_时分秒
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  const hour = String(now.getHours()).padStart(2, '0')
+  const minute = String(now.getMinutes()).padStart(2, '0')
+  const second = String(now.getSeconds()).padStart(2, '0')
+  const fileName = `standjump_${year}${month}${day}_${hour}${minute}${second}`
+
+  const blob = new Blob(recordedChunks, { type: 'video/mp4' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${fileName}.mp4`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 const login = () => {
