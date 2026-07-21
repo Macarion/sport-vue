@@ -48,11 +48,6 @@
                 <span class="count-info">有效成绩：</span>
                 <span class="count-display">{{ num }}</span>
               </div>
-              <hr width="30%" color="green" size="3px" align="center" />
-              <div>
-                <span class="count-info">总个数：</span>
-                <span class="count-display">{{ num_all }}</span>
-              </div>
             </div>
           </div>
         </el-col>
@@ -101,7 +96,6 @@ const countChartElement = ref(null)
 const angleChartElement = ref(null)
 const cameraActive = ref(false)
 let num = ref(0)
-let num_all = ref(0)
 let count = ref(0) // 用于显示个数
 let countChartInstance = null
 let angleChartInstance = null
@@ -145,7 +139,6 @@ const start = async () => {
   if (cameraActive.value) return // 防止重复开启
   isRegister.value = true
   num.value = 0
-  num_all.value = 0
   count.value = 0
   nums = []
   angles = []
@@ -334,7 +327,6 @@ const createWebRTC = async (uid) => {
 
 const handleWsMessage = (result) => {
   num.value = result.score
-  num_all.value = result.num_all
   hints.value = result.hints || []
   if (hints.value.length === 0) {
     hints.value = ["正常"]
