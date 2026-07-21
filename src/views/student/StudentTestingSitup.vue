@@ -6,10 +6,18 @@
         <video ref="resultVideo" autoplay muted playsinline style="height:100%;width:100%;object-fit:contain" />
       </div>
       <div class="chart-box">
-        <h3>分数</h3>
-        <div class="info-content">
-          <div class="count-display">{{ num }}</div>
-          <div class="record-details">
+        <div style="flex: 1;">
+          <h3 style="margin: 0;">分数</h3>
+          <div style="text-align: center;">
+            <div class="count-display">{{ num }}</div>
+          </div>
+        </div>
+        <div style="flex: 1;">
+          <h3 style="margin: 0;">状态</h3>
+          <div style="text-align: center;">
+            <div class="hints-area">
+              <div v-for="(hint, idx) in hints" :key="idx" class="hint-text">{{ hint }}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -23,7 +31,10 @@
         <el-option v-for="cam in cameraList" :key="cam.deviceId" :label="cam.label || `摄像头${camIndex++}`" :value="cam.deviceId"/>
       </el-select>
       <el-button @click="login">返回</el-button>
-      <el-button type="success" @click="downloadOriginVideo" :disabled="cameraActive || !hasRecordedVideo" style="float: right;">下载原视频</el-button>
+      <div style="float: right; display: flex; gap: 10px;">
+        <el-checkbox v-model="drawingEnabled" @change="onDrawingToggle">绘图开关</el-checkbox>
+        <el-button type="success" @click="downloadOriginVideo" :disabled="cameraActive || !hasRecordedVideo">下载原视频</el-button>
+      </div>
     </div>
 
     <!-- 信息展示区域 -->
@@ -117,6 +128,19 @@ let hasRecordedVideo = ref(false)
 const username = localStorage.getItem('username')
 console.log('获取到的username:', username)
 
+// 绘图开关
+const drawingEnabled = ref(true)
+const hints = ref(["请点击开始按钮"])
+
+const onDrawingToggle = (val) => {
+  if (webrtc && webrtc.ws && webrtc.ws.readyState === WebSocket.OPEN) {
+    webrtc.ws.send(JSON.stringify({
+      type: 'config',
+      drawing: val,
+    }))
+  }
+}
+
 const start = async () => {
   if (cameraActive.value) return // 防止重复开启
   isRegister.value = true
@@ -126,6 +150,7 @@ const start = async () => {
   nums = []
   angles = []
   timestamps = []
+  hints.value = ["连接中..."]
   detectStarted.value = false
 
   // 清除已有定时器
@@ -160,16 +185,6 @@ const start = async () => {
 
       cameraActive.value = true
     }
-
-    // // 仅在摄像头开启时启动定时器
-    // if (cameraActive.value) {
-    //   timer1 = setInterval(() => {
-    //     if (cameraActive.value) fetchFrame() // 检查摄像头状态
-    //   }, 1000)
-    //   timer2 = setInterval(() => {
-    //     if (cameraActive.value) sendRequest() // 检查摄像头状态
-    //   }, 1000)
-    // }
   } catch (err) {
     console.error('启动摄像头失败:', err)
     cameraActive.value = false
@@ -179,33 +194,12 @@ const start = async () => {
 
 const stop = async () => {
   speakMessage('测试已结束，您的成绩为：' + num.value + '个')
-  // isRegister.value = false
-  cameraActive.value = false // 立即设置摄像头状态为关闭
-  // detectStarted.value = false
+  cameraActive.value = false
   try {
     stopRecord()
 
     const res = await stop_monitor_situp(username)
     console.log('关闭摄像头返回:', res)
-
-    // // 清除定时器
-    // if (timer1) clearInterval(timer1)
-    // if (timer2) clearInterval(timer2)
-    // timer1 = null
-    // timer2 = null
-
-    // // 清除图表数据
-    // if (countChartInstance) {
-    //   countChartInstance.destroy()
-    //   countChartInstance = null
-    // }
-    // if (angleChartInstance) {
-    //   angleChartInstance.destroy()
-    //   angleChartInstance = null
-    // }
-
-    // // 清除图像预览
-    // cleanup()
   } catch (err) {
     console.error('关闭摄像头失败:', err)
   }
@@ -323,19 +317,12 @@ const createWebRTC = async (uid) => {
         sdp: msg.sdp
       })
     }
-    else if (msg.type === "data") {
-
+    else if (msg.type === "eval_result") {
       // 接收数据并展示
-      const result = JSON.parse(msg.data)
-
-      num.value = result.score
-      num_all.value = result.num_all
-
-      timestamps.push(Number(result.timestamp))
-      nums.push(Number(result.score))
-      angles.push(Number(result.angle))
-
-      updateCharts()
+      handleWsMessage(msg.data)
+    }
+    else if (msg.type === "test_end") {
+      console.log("测试结束")
     }
   }
 
@@ -343,6 +330,21 @@ const createWebRTC = async (uid) => {
   ws.onerror = err => console.error("WebSocket错误", err);
 
   return { pc, ws }
+}
+
+const handleWsMessage = (result) => {
+  num.value = result.score
+  num_all.value = result.num_all
+  hints.value = result.hints || []
+  if (hints.value.length === 0) {
+    hints.value = ["正常"]
+  }
+
+  timestamps.push(Number(result.timestamp))
+  nums.push(Number(result.score))
+  angles.push(Number(result.angle))
+
+  updateCharts()
 }
 
 const startRecord = async (uid) => {
@@ -408,6 +410,7 @@ const initCountChart = () => {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
       scales: {
         x: {
           title: {
@@ -417,6 +420,7 @@ const initCountChart = () => {
           ticks: {
             autoSkip: true,
             maxRotation: 0,
+            maxTicksLimit: 8,
           },
         },
         y: {
@@ -430,7 +434,7 @@ const initCountChart = () => {
         tooltip: {
           callbacks: {
             label: function (context) {
-              return `${formatTimestamp(timestamps[context.dataIndex])}: ${context.raw}`
+              return `${formatTimestamp(timestamps[context.dataIndex + Math.max(0, timestamps.length - 100)])}: ${context.raw}`
             },
           },
         },
@@ -463,6 +467,7 @@ const initAngleChart = () => {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
       scales: {
         x: {
           title: {
@@ -472,15 +477,19 @@ const initAngleChart = () => {
           ticks: {
             autoSkip: true,
             maxRotation: 0,
+            maxTicksLimit: 8,
           },
         },
-        y: {},
+        y: {
+          beginAtZero: true,
+          suggestedMax: 60,
+        },
       },
       plugins: {
         tooltip: {
           callbacks: {
             label: function (context) {
-              return `${formatTimestamp(timestamps[context.dataIndex])}: ${context.raw}°`
+              return `${formatTimestamp(timestamps[context.dataIndex + Math.max(0, timestamps.length - 100)])}: ${context.raw}°`
             },
           },
         },
@@ -659,7 +668,7 @@ onMounted(() => {
 }
 
 .info-content {
-  height: calc(100% - 40px);
+  height: calc(100% - 60px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -679,6 +688,20 @@ onMounted(() => {
   font-weight: bold;
   color: #67c23a;
   vertical-align: middle;
+}
+
+.hints-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.hint-text {
+  font-size: 32px;
+  font-weight: bold;
+  color: #e6a23c;
 }
 
 .record-details {
