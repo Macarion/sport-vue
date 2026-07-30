@@ -25,8 +25,8 @@
 
     <!-- 控制按钮区域 -->
     <div class="control-buttons">
-      <el-button type="primary" @click="start" :disabled="cameraActive">开启摄像头</el-button>
-      <el-button type="danger" @click="stop" :disabled="!cameraActive">关闭摄像头</el-button>
+      <el-button type="primary" @click="start()" :disabled="cameraActive">开启摄像头</el-button>
+      <el-button type="danger" @click="stop()" :disabled="!cameraActive">关闭摄像头</el-button>
       <el-select v-model="selectedDeviceId" placeholder="选择摄像头" style="width: 15rem; margin:0 10px;" :disabled="cameraActive">
         <el-option v-for="cam in cameraList" :key="cam.deviceId" :label="cam.label || `摄像头${camIndex++}`" :value="cam.deviceId"/>
       </el-select>
@@ -42,11 +42,10 @@
       <el-row :gutter="20" class="info-row">
         <el-col :span="8">
           <div class="info-card">
-            <h3>个数记录</h3>
+            <h3>倒计时</h3>
             <div class="info-content">
               <div>
-                <span class="count-info">有效成绩：</span>
-                <span class="count-display">{{ num }}</span>
+                <span class="count-display">{{ formatCountdown(leftCountdownMs) }}</span>
               </div>
             </div>
           </div>
@@ -89,9 +88,6 @@ let mediaParams = {
   audio: false,
 }
 
-let timer1 = null
-let timer2 = null
-
 const countChartElement = ref(null)
 const angleChartElement = ref(null)
 const cameraActive = ref(false)
@@ -106,6 +102,12 @@ let angles = []
 let nums = []
 const isRegister = ref(false)
 const detectStarted = ref(false)
+
+// 倒计时配置：总时长毫秒，默认60000ms = 1分钟
+const COUNTDOWN_TOTAL_MS = 60_000
+// 当前剩余毫秒
+const leftCountdownMs = ref(0)
+let countdownInterval = null
 
 // 摄像头列表与选中设备
 const cameraList = ref([])
@@ -146,11 +148,10 @@ const start = async () => {
   hints.value = ["连接中..."]
   detectStarted.value = false
 
-  // 清除已有定时器
-  if (timer1) clearInterval(timer1)
-  if (timer2) clearInterval(timer2)
-  timer1 = null
-  timer2 = null
+    // 重置倒计时
+  leftCountdownMs.value = COUNTDOWN_TOTAL_MS
+  if (countdownInterval) clearInterval(countdownInterval)
+  countdownInterval = null
 
   // 清除图表数据
   if (countChartInstance) {
@@ -185,9 +186,21 @@ const start = async () => {
   }
 }
 
-const stop = async () => {
-  speakMessage('测试已结束，您的成绩为：' + num.value + '个')
+const stop = async (is_timeout = false) => {
+  if (!cameraActive.value) return // 防止重复关闭
   cameraActive.value = false
+
+  if (is_timeout) {
+    speakMessage('倒计时结束，您的成绩为：' + num.value + '个')
+  } else {
+    speakMessage('测试已结束，您的成绩为：' + num.value + '个')
+  }
+
+  if (countdownInterval){
+    clearInterval(countdownInterval)
+    countdownInterval = null
+  }
+
   try {
     stopRecord()
 
@@ -273,7 +286,6 @@ const createWebRTC = async (uid) => {
     pc.ontrack = (evt) => {
       console.log("收到后端回传视频流", evt);
       resultVideo.value.srcObject = evt.streams[0];
-      speakMessage('测试开始')
     };
 
     // 接收后端回传的ICE候选
@@ -337,6 +349,36 @@ const handleWsMessage = (result) => {
   angles.push(Number(result.angle))
 
   updateCharts()
+
+  switch (hints.value[0]) {
+    case "正常":
+      break;
+    case "请平躺":
+      speakMessage("请平躺，双腿屈膝固定", false);
+      break;
+    case "检测成功！":
+      speakMessage("准备完成，测试开始");
+
+      // 开始计时
+      // 启动倒计时
+      if (countdownInterval) clearInterval(countdownInterval)
+      countdownInterval = setInterval(()=>{
+        leftCountdownMs.value -= 1000
+        if (leftCountdownMs.value <= 0){
+          clearInterval(countdownInterval)
+          countdownInterval = null
+          leftCountdownMs.value = 0
+          stop(true)
+        }
+      }, 1000);
+      break;
+    case "手臂打开借力":
+      speakMessage("检测到手臂借力", false);
+      break;
+    case "测试者出画面":
+      speakMessage("检测到身体移出画面，本次测试结束");
+      break;
+  }
 }
 
 const startRecord = async (uid) => {
@@ -532,22 +574,28 @@ const cleanup = () => {
   }
 }
 
-const speakMessage = (text) => {
+const speakMessage = (text, interrupt = true) => {
   if (!('speechSynthesis' in window)) {
     console.warn('当前浏览器不支持语音播报')
     return
   }
-  window.speechSynthesis.cancel()
+  if (interrupt) window.speechSynthesis.cancel()
+  else if (window.speechSynthesis.speaking) return
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.lang = 'zh-CN'
   window.speechSynthesis.speak(utterance)
 }
 
+// 毫秒转为 MM:SS
+const formatCountdown = (ms) => {
+  const totalSec = Math.max(0, Math.floor(ms / 1000))
+  const min = String(Math.floor(totalSec / 60)).padStart(2, '0')
+  const sec = String(totalSec % 60).padStart(2, '0')
+  return `${min}:${sec}`
+}
+
 onUnmounted(() => {
-  if (timer1) clearInterval(timer1)
-  if (timer2) clearInterval(timer2)
-  timer1 = null
-  timer2 = null
+  if (countdownInterval) clearInterval(countdownInterval)
   if (countChartInstance) {
     countChartInstance.destroy()
     countChartInstance = null
