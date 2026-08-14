@@ -45,7 +45,8 @@
             <h3>倒计时</h3>
             <div class="info-content">
               <div>
-                <span class="count-display">{{ formatCountdown(leftCountdownMs) }}</span>
+                <span class="count-display" v-if="isCountingDown">{{ countdownDisplay }}</span>
+                <span class="count-display" v-else>{{ formatCountdown(leftCountdownMs) }}</span>
               </div>
             </div>
           </div>
@@ -100,6 +101,7 @@ const router = useRouter()
 let timestamps = []
 let angles = []
 let nums = []
+let startTime = 0
 const isRegister = ref(false)
 const detectStarted = ref(false)
 
@@ -128,6 +130,16 @@ console.log('获取到的username:', username)
 const drawingEnabled = ref(true)
 const hints = ref(["请点击开始按钮"])
 
+// ready 状态跟踪
+let lastReadyState = false
+// 读秒状态
+const isCountingDown = ref(false)
+let countdownTimer = null
+// 倒计时显示文本
+const countdownDisplay = ref('')
+// 结束播报状态
+let hasStopSpoken = false
+
 const onDrawingToggle = (val) => {
   if (webrtc && webrtc.ws && webrtc.ws.readyState === WebSocket.OPEN) {
     webrtc.ws.send(JSON.stringify({
@@ -147,11 +159,17 @@ const start = async () => {
   timestamps = []
   hints.value = ["连接中..."]
   detectStarted.value = false
+  lastReadyState = false
+  isCountingDown.value = false
+  countdownDisplay.value = ''
+  hasStopSpoken = false
 
     // 重置倒计时
   leftCountdownMs.value = COUNTDOWN_TOTAL_MS
   if (countdownInterval) clearInterval(countdownInterval)
   countdownInterval = null
+  if (countdownTimer) clearInterval(countdownTimer)
+  countdownTimer = null
 
   // 清除图表数据
   if (countChartInstance) {
@@ -190,16 +208,25 @@ const stop = async (is_timeout = false) => {
   if (!cameraActive.value) return // 防止重复关闭
   cameraActive.value = false
 
-  if (is_timeout) {
-    speakMessage('倒计时结束，您的成绩为：' + num.value + '个')
-  } else {
-    speakMessage('测试已结束，您的成绩为：' + num.value + '个')
+  if (!hasStopSpoken) {
+    if (is_timeout) {
+      speakMessage('倒计时结束，您的成绩为：' + num.value + '个')
+    } else {
+      speakMessage('测试已结束，您的成绩为：' + num.value + '个')
+    }
+    hasStopSpoken = true
   }
 
   if (countdownInterval){
     clearInterval(countdownInterval)
     countdownInterval = null
   }
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+    countdownTimer = null
+  }
+  isCountingDown.value = false
+  countdownDisplay.value = ''
 
   try {
     stopRecord()
@@ -344,40 +371,49 @@ const handleWsMessage = (result) => {
     hints.value = ["正常"]
   }
 
-  timestamps.push(Number(result.timestamp))
-  nums.push(Number(result.score))
-  angles.push(Number(result.angle))
+  if (startTime != 0) {
+    timestamps.push(Number(result.timestamp))
+    nums.push(Number(result.score))
+    angles.push(Number(result.angle))
 
-  updateCharts()
+    updateCharts()
+  }
 
-  switch (hints.value[0]) {
-    case "正常":
-      break;
-    case "请平躺":
-      speakMessage("请平躺，双腿屈膝固定", false);
-      break;
-    case "检测成功！":
-      speakMessage("准备完成，测试开始");
+  // 检测 ready 字段变化
+  const currentReady = result.ready === true || result.ready === 1
+  if (currentReady && !lastReadyState && !detectStarted.value) {
+    // ready 从 false 变为 true，开始准备倒计时
+    lastReadyState = true
+    startPrepareCountdown()
+  } else {
+    lastReadyState = currentReady
+  }
 
-      // 开始计时
-      // 启动倒计时
-      if (countdownInterval) clearInterval(countdownInterval)
-      countdownInterval = setInterval(()=>{
-        leftCountdownMs.value -= 1000
-        if (leftCountdownMs.value <= 0){
-          clearInterval(countdownInterval)
-          countdownInterval = null
-          leftCountdownMs.value = 0
-          stop(true)
+  if (!hasStopSpoken) {
+    switch (hints.value[0]) {
+      case "正常":
+        break;
+      case "请平躺":
+        speakMessage("请平躺，双腿屈膝固定", false);
+        break;
+      case "手臂打开借力":
+        speakMessage("检测到手臂借力", false);
+        break;
+      case "测试者出画面":
+        if (!hasStopSpoken) {
+          speakMessage("检测到身体移出画面，本次测试结束，您的成绩为" + num.value + "个");
+          hasStopSpoken = true;
+          stop();
         }
-      }, 1000);
-      break;
-    case "手臂打开借力":
-      speakMessage("检测到手臂借力", false);
-      break;
-    case "测试者出画面":
-      speakMessage("检测到身体移出画面，本次测试结束");
-      break;
+        break;
+      case "膝盖移动过多":
+        if (!hasStopSpoken) {
+          hasStopSpoken = true;
+          speakMessage("检测到膝盖移动过多，请保持画面中只有一人避免错判，本次测试结束，您的成绩为" + num.value + "个");
+          stop();
+        }
+        break;
+    }
   }
 }
 
@@ -534,7 +570,7 @@ const initAngleChart = () => {
 
 const updateCharts = () => {
   if (countChartInstance) {
-    countChartInstance.data.labels = timestamps.map((ts) => formatTimestamp(ts - timestamps[0]))
+    countChartInstance.data.labels = timestamps.map((ts) => formatTimestamp(ts - startTime))
     countChartInstance.data.datasets[0].data = nums
     const maxPoints = 15 * 60
     if (countChartInstance.data.labels.length > maxPoints) {
@@ -545,7 +581,7 @@ const updateCharts = () => {
     countChartInstance.update()
   }
   if (angleChartInstance) {
-    angleChartInstance.data.labels = timestamps.map((ts) => formatTimestamp(ts - timestamps[0]))
+    angleChartInstance.data.labels = timestamps.map((ts) => formatTimestamp(ts - startTime))
     angleChartInstance.data.datasets[0].data = angles
     const maxPoints = 15 * 10
     if (angleChartInstance.data.labels.length > maxPoints) {
@@ -586,6 +622,57 @@ const speakMessage = (text, interrupt = true) => {
   window.speechSynthesis.speak(utterance)
 }
 
+// 开始准备倒计时（3秒读秒）
+const startPrepareCountdown = () => {
+  if (detectStarted.value) return
+  detectStarted.value = true
+  isCountingDown.value = true
+
+  speakMessage("检测完成，准备开始")
+
+  let countdown = 6
+  countdownDisplay.value = countdown >= 3 ? "3" : countdown.toString()
+
+  countdownTimer = setInterval(() => {
+    countdown--
+    if (countdown > 0) {
+      countdownDisplay.value = countdown >= 3 ? "3" : countdown.toString()
+      if (countdown <= 3) {
+        speakMessage(countdown.toString())
+      }
+    } else {
+      // 读秒结束，开始正式倒计时
+      clearInterval(countdownTimer)
+      countdownTimer = null
+      countdownDisplay.value = '开始'
+      startTime = Date.now()
+      speakMessage("开始")
+
+      // 延迟后启动正式倒计时
+      setTimeout(() => {
+        isCountingDown.value = false
+        countdownDisplay.value = ''
+        startTestCountdown()
+      }, 1000)
+    }
+  }, 1000)
+}
+
+// 开始正式测试倒计时
+const startTestCountdown = () => {
+  if (countdownInterval) clearInterval(countdownInterval)
+  leftCountdownMs.value = COUNTDOWN_TOTAL_MS
+  countdownInterval = setInterval(() => {
+    leftCountdownMs.value -= 1000
+    if (leftCountdownMs.value <= 0) {
+      clearInterval(countdownInterval)
+      countdownInterval = null
+      leftCountdownMs.value = 0
+      stop(true)
+    }
+  }, 1000)
+}
+
 // 毫秒转为 MM:SS
 const formatCountdown = (ms) => {
   const totalSec = Math.max(0, Math.floor(ms / 1000))
@@ -596,6 +683,7 @@ const formatCountdown = (ms) => {
 
 onUnmounted(() => {
   if (countdownInterval) clearInterval(countdownInterval)
+  if (countdownTimer) clearInterval(countdownTimer)
   if (countChartInstance) {
     countChartInstance.destroy()
     countChartInstance = null
