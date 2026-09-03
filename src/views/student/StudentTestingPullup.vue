@@ -333,7 +333,7 @@ const createWebRTC = async (uid) => {
     else if (msg.type === "data") {
 
       // 接收数据并展示
-      const result = JSON.parse(msg.data)
+      const result = msg.data
 
       num.value = result.score
       num_all.value = result.num_all
@@ -415,6 +415,7 @@ const initCountChart = () => {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
       scales: {
         x: {
           title: {
@@ -424,6 +425,7 @@ const initCountChart = () => {
           ticks: {
             autoSkip: true,
             maxRotation: 0,
+            maxTicksLimit: 8,
           },
         },
         y: {
@@ -457,7 +459,7 @@ const initAngleChart = () => {
       labels: timestamps.map((ts) => formatTimestamp(ts)),
       datasets: [
         {
-          label: '肘关节打开角度',
+          label: '上起距离',
           data: [],
           borderColor: '#67c23a',
           backgroundColor: 'rgba(103, 194, 58, 0.2)',
@@ -470,6 +472,7 @@ const initAngleChart = () => {
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
       scales: {
         x: {
           title: {
@@ -479,6 +482,7 @@ const initAngleChart = () => {
           ticks: {
             autoSkip: true,
             maxRotation: 0,
+            maxTicksLimit: 8,
           },
         },
         y: {},

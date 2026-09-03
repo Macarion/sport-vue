@@ -349,11 +349,11 @@ const createWebRTC = async (uid) => {
         sdp: msg.sdp
       })
     }
-    else if (msg.type === "eval_result") {
+    else if (msg.type === "data") {
       // 接收数据并展示
       handleWsMessage(msg.data)
     }
-    else if (msg.type === "test_end") {
+    else if (msg.type === "end") {
       console.log("测试结束")
     }
   }
