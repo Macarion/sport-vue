@@ -102,6 +102,7 @@ let timestamps = []
 let angles = []
 let nums = []
 let startTime = 0
+let is_timeout = false
 const isRegister = ref(false)
 const detectStarted = ref(false)
 
@@ -164,12 +165,13 @@ const start = async () => {
   countdownDisplay.value = ''
   hasStopSpoken = false
 
-    // 重置倒计时
+  // 重置倒计时
   leftCountdownMs.value = COUNTDOWN_TOTAL_MS
   if (countdownInterval) clearInterval(countdownInterval)
   countdownInterval = null
   if (countdownTimer) clearInterval(countdownTimer)
   countdownTimer = null
+  is_timeout = false
 
   // 清除图表数据
   if (countChartInstance) {
@@ -204,18 +206,9 @@ const start = async () => {
   }
 }
 
-const stop = async (is_timeout = false) => {
+const stop = async () => {
   if (!cameraActive.value) return // 防止重复关闭
   cameraActive.value = false
-
-  if (!hasStopSpoken) {
-    if (is_timeout) {
-      speakMessage('倒计时结束，您的成绩为：' + num.value + '个')
-    } else {
-      speakMessage('测试已结束，您的成绩为：' + num.value + '个')
-    }
-    hasStopSpoken = true
-  }
 
   if (countdownInterval){
     clearInterval(countdownInterval)
@@ -355,6 +348,7 @@ const createWebRTC = async (uid) => {
     }
     else if (msg.type === "end") {
       console.log("测试结束")
+      handleWsClose()
     }
   }
 
@@ -415,6 +409,19 @@ const handleWsMessage = (result) => {
         break;
     }
   }
+}
+
+const handleWsClose = () => {
+  
+  if (!hasStopSpoken) {
+    hasStopSpoken = true
+    if (is_timeout) {
+      speakMessage('倒计时结束，您的成绩为：' + num.value + '个')
+    } else {
+      speakMessage('测试已结束，您的成绩为：' + num.value + '个')
+    }
+  }
+
 }
 
 const startRecord = async (uid) => {
@@ -668,7 +675,8 @@ const startTestCountdown = () => {
       clearInterval(countdownInterval)
       countdownInterval = null
       leftCountdownMs.value = 0
-      stop(true)
+      is_timeout = true
+      stop()
     }
   }, 1000)
 }
