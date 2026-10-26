@@ -384,29 +384,32 @@ const handleWsMessage = (result) => {
   }
 
   if (!hasStopSpoken) {
-    switch (hints.value[0]) {
-      case "正常":
-        break;
-      case "请平躺":
-        speakMessage("请平躺，双腿屈膝固定", false);
-        break;
-      case "手臂打开借力":
-        speakMessage("检测到手臂借力", false);
-        break;
-      case "测试者出画面":
-        if (!hasStopSpoken) {
-          speakMessage("检测到身体移出画面，本次测试结束，您的成绩为" + num.value + "个");
-          hasStopSpoken = true;
-          stop();
-        }
-        break;
-      case "膝盖移动过多":
-        if (!hasStopSpoken) {
-          hasStopSpoken = true;
-          speakMessage("检测到膝盖移动过多，请保持画面中只有一人避免错判，本次测试结束，您的成绩为" + num.value + "个");
-          stop();
-        }
-        break;
+    if (result.is_waiting_for_flat) {
+      speakMessage("请平躺，双腿屈膝固定", false);
+    }
+    if (result.is_arm_force_cheat) {
+      speakMessage("检测到手臂借力", false);
+    }
+    if (result.is_out_of_bounds) {
+      if (!hasStopSpoken) {
+        speakMessage("检测到身体移出画面，本次测试结束，您的成绩为" + num.value + "个");
+        hasStopSpoken = true;
+        stop();
+      }
+    }
+    if (result.is_knee_move) {
+      if (!hasStopSpoken) {
+        hasStopSpoken = true;
+        speakMessage("检测到大幅移动，请避免其他人干扰画面，本次测试结束，您的成绩为" + num.value + "个");
+        stop();
+      }
+    }
+    if (result.is_assist_cheat) {
+      if (!hasStopSpoken) {
+        speakMessage("检测到可能有人助力，请避免其他人干扰画面，本次测试结束，您的成绩为" + num.value + "个");
+        hasStopSpoken = true;
+        stop();
+      }
     }
   }
 }
