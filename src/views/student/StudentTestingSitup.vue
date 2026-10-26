@@ -657,6 +657,7 @@ const startPrepareCountdown = () => {
       countdownDisplay.value = '开始'
       startTime = Date.now()
       speakMessage("开始")
+      webrtc.ws.send(JSON.stringify({ type: 'config', start: true }))
 
       // 延迟后启动正式倒计时
       setTimeout(() => {
