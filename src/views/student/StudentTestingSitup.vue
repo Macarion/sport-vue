@@ -118,6 +118,17 @@ const selectedDeviceId = ref('')
 let camIndex = 1
 const resultVideo = ref(null)
 
+// 后端回传流：ontrack 只存不挂；phase:'ready' 与轨道双条件齐了才切（修模型加载期黑屏）
+let remoteStream = null
+let remoteReady = false
+
+const attachRemoteIfNeeded = () => {
+  if (!remoteReady || !remoteStream || !resultVideo.value) return
+  if (resultVideo.value.srcObject === remoteStream) return // 幂等：同一流不重复挂
+  resultVideo.value.srcObject = remoteStream
+  console.log("画面已切换为后端处理流")
+}
+
 let webrtc
 let mediaStream = null;
 let mediaRecorder = null
@@ -283,6 +294,10 @@ const createWebRTC = async (uid) => {
 
   ws.onopen = async () => {
 
+    // 每次连接重置远端流状态：本次 ready 前始终显示本地采集画面
+    remoteStream = null
+    remoteReady = false
+
     await openCamera()
     startLocalRecording()
 
@@ -302,10 +317,11 @@ const createWebRTC = async (uid) => {
       }
     })
 
-    // 接收后端回传的视频流
+    // 接收后端回传的视频流：只存不挂，双条件齐了才切（本地预览保留到 ready）
     pc.ontrack = (evt) => {
       console.log("收到后端回传视频流", evt);
-      resultVideo.value.srcObject = evt.streams[0];
+      remoteStream = evt.streams[0] || new MediaStream([evt.track]);
+      attachRemoteIfNeeded();
     };
 
     // 接收后端回传的ICE候选
@@ -345,6 +361,23 @@ const createWebRTC = async (uid) => {
     else if (msg.type === "data") {
       // 接收数据并展示
       handleWsMessage(msg.data)
+    }
+    else if (msg.type === "phase") {
+      // 后端用户进程阶段推送：loading / ready
+      if (msg.phase === "ready") {
+        if (!detectStarted.value) hints.value = ["准备就绪"]
+        remoteReady = true
+        attachRemoteIfNeeded() // 轨道先到则此刻切；未到则等 ontrack 再查
+      } else {
+        hints.value = ["模型加载中..."]
+      }
+    }
+    else if (msg.type === "error") {
+      // 后端用户进程报错（随后会有 end 消息收尾）
+      console.error("后端处理错误:", msg.message)
+      hints.value = ["错误：" + (msg.message || "后端处理失败")]
+      hasStopSpoken = true // 抑制误播"测试已结束"成绩语音
+      stop()
     }
     else if (msg.type === "end") {
       console.log("测试结束")
