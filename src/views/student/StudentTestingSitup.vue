@@ -16,7 +16,10 @@
           <h3 style="margin: 0;">状态</h3>
           <div style="text-align: center;">
             <div class="hints-area">
-              <div v-for="(hint, idx) in hints" :key="idx" class="hint-text">{{ hint }}</div>
+              <div v-if="faceHint" class="hint-text">{{ faceHint }}</div>
+              <template v-else>
+                <div v-for="(hint, idx) in hints" :key="idx" class="hint-text">{{ hint }}</div>
+              </template>
             </div>
           </div>
         </div>
@@ -118,7 +121,7 @@ const selectedDeviceId = ref('')
 let camIndex = 1
 const resultVideo = ref(null)
 
-// 后端回传流：ontrack 只存不挂；phase:'ready' 与轨道双条件齐了才切（修模型加载期黑屏）
+// 后端回传流：ontrack 只存不挂；loaded:true 与轨道双条件齐了才切（修模型加载期黑屏）
 let remoteStream = null
 let remoteReady = false
 
@@ -141,9 +144,19 @@ console.log('获取到的username:', username)
 // 绘图开关
 const drawingEnabled = ref(true)
 const hints = ref(["请点击开始按钮"])
+// 人脸门禁提示：优先于 hints 展示；通过短暂自清，失败持续到下次识别结果
+const faceHint = ref('')
+const clearFaceHintLater = () => {
+  const text = faceHint.value
+  setTimeout(() => {
+    if (faceHint.value === text) faceHint.value = ''
+  }, 2000)
+}
 
 // ready 状态跟踪
 let lastReadyState = false
+// 人脸状态跟踪（随帧数据 result.face 变化时更新提示）
+let lastFaceState = null
 // 读秒状态
 const isCountingDown = ref(false)
 let countdownTimer = null
@@ -170,8 +183,10 @@ const start = async () => {
   angles = []
   timestamps = []
   hints.value = ["连接中..."]
+  faceHint.value = ""
   detectStarted.value = false
   lastReadyState = false
+  lastFaceState = null
   isCountingDown.value = false
   countdownDisplay.value = ''
   hasStopSpoken = false
@@ -362,19 +377,18 @@ const createWebRTC = async (uid) => {
       // 接收数据并展示
       handleWsMessage(msg.data)
     }
-    else if (msg.type === "phase") {
-      // 后端用户进程阶段推送：loading / ready
-      if (msg.phase === "ready") {
+    else if (msg.type === "loaded") {
+      // 模型加载完成通知；人脸状态随帧数据（result.face）承载
+      if (msg.value === true) {
         if (!detectStarted.value) hints.value = ["准备就绪"]
         remoteReady = true
         attachRemoteIfNeeded() // 轨道先到则此刻切；未到则等 ontrack 再查
-      } else {
-        hints.value = ["模型加载中..."]
       }
     }
     else if (msg.type === "error") {
       // 后端用户进程报错（随后会有 end 消息收尾）
       console.error("后端处理错误:", msg.message)
+      faceHint.value = "" // 错误提示不被人脸提示遮挡
       hints.value = ["错误：" + (msg.message || "后端处理失败")]
       hasStopSpoken = true // 抑制误播"测试已结束"成绩语音
       stop()
@@ -398,6 +412,30 @@ const handleWsMessage = (result) => {
     hints.value = ["正常"]
   }
 
+  // 人脸状态随帧数据承载（原 phase:face / face_result）
+  const face = result.face
+  if (face) {
+    if (face.state !== lastFaceState) {
+      lastFaceState = face.state
+      if (face.state === "checking") {
+        faceHint.value = "正在进行人脸识别，请注视摄像头"
+      } else if (face.state === "passed") {
+        if (face.registered === false) {
+          faceHint.value = "未注册学生，直接放行"
+          clearFaceHintLater()
+        } else {
+          faceHint.value = "人脸识别完成"
+          clearFaceHintLater()
+        }
+      }
+    }
+    // 失败/超时：前两次静默重试，第3次起才提示（fail_count 由后端累计，会话内跨重试累计）
+    if ((face.state === "failed" || face.state === "timeout")
+        && (face.fail_count || 0) >= 3) {
+      faceHint.value = "人脸识别未通过，请重试"
+    }
+  }
+
   if (startTime != 0) {
     timestamps.push(Number(result.timestamp))
     nums.push(Number(result.score))
@@ -418,7 +456,7 @@ const handleWsMessage = (result) => {
 
   if (!hasStopSpoken) {
     if (result.is_waiting_for_flat) {
-      speakMessage("请平躺，双腿屈膝固定", false);
+      speakMessage("请平躺，双腿保持不动", false);
     }
     if (result.is_arm_force_cheat) {
       speakMessage("检测到手臂借力", false);
