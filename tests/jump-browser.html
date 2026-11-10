@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="UTF-8">
+<title>Jump browser integration test</title>
+<div id="app"></div>
+<script type="module">
+  import { createApp } from 'vue'
+  import { createPinia } from 'pinia'
+  import { createRouter, createMemoryHistory } from 'vue-router'
+  import ElementPlus from 'element-plus'
+  import 'element-plus/dist/index.css'
+  import Chart from 'chart.js/auto'
+  window.jumpChartClass = Chart
+  import Jump from '/src/views/student/StudentTestingStandjump.vue'
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: Jump }] })
+  createApp(Jump).use(createPinia()).use(router).use(ElementPlus).mount('#app')
+</script>
+</html>

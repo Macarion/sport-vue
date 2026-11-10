@@ -228,7 +228,6 @@ import {
 } from '@/api/user.js'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { v4 as uuidv4 } from 'uuid' // For generating unique IDs (optional, install via npm)
 import { useRouter } from 'vue-router'
 // 2025-12-02 批量导入：前端解析 Excel
 import * as XLSX from 'xlsx'

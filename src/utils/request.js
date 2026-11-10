@@ -3,7 +3,7 @@ import { useSecurityStore } from "@/stores/security";
 import router from "@/router";
 import { getAccess, getRefresh, setAccess, clearAuth } from "@/utils/token";
 
-const baseURL = "http://localhost:8090/"; // 业务接口
+const baseURL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8090/"; // 业务接口
 const authBaseURL = "http://121.196.163.155:8080"; // 远程鉴权服务
 const api = axios.create({
   baseURL,

@@ -16,6 +16,9 @@ export default defineConfig([
     languageOptions: {
       globals: {
         ...globals.browser,
+        ElMessage: 'readonly',
+        ElMessageBox: 'readonly',
+        ElLoading: 'readonly',
       },
     },
   },
@@ -24,9 +27,4 @@ export default defineConfig([
   ...pluginVue.configs['flat/essential'],
   skipFormatting,
 
-  globals, {
-    ElMessage: 'readonly',
-    ElMessageBox: 'readonly',
-    ElLoading: 'readonly'
-  }
 ])
