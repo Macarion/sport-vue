@@ -504,7 +504,7 @@ const updateCharts = () => {
   if (countChartInstance) {
     countChartInstance.data.labels = timestamps.map((ts) => formatTimestamp(ts - timestamps[0]))
     countChartInstance.data.datasets[0].data = nums
-    const maxPoints = 100
+    const maxPoints = 15 * 60 * 3
     if (countChartInstance.data.labels.length > maxPoints) {
       countChartInstance.data.labels = countChartInstance.data.labels.slice(-maxPoints)
       countChartInstance.data.datasets[0].data =
@@ -515,7 +515,7 @@ const updateCharts = () => {
   if (angleChartInstance) {
     angleChartInstance.data.labels = timestamps.map((ts) => formatTimestamp(ts - timestamps[0]))
     angleChartInstance.data.datasets[0].data = angles
-    const maxPoints = 100
+    const maxPoints = 15 * 60 * 3
     if (angleChartInstance.data.labels.length > maxPoints) {
       angleChartInstance.data.labels = angleChartInstance.data.labels.slice(-maxPoints)
       angleChartInstance.data.datasets[0].data =
