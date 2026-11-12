@@ -3,18 +3,24 @@
     <!-- 摄像头和图表区域 -->
     <div class="camera-chart-container">
       <div class="camera-box">
-        <video ref="resultVideo" autoplay muted playsinline style="height:100%;width:100%;object-fit:contain" />
+        <video
+          ref="resultVideo"
+          autoplay
+          muted
+          playsinline
+          style="height: 100%; width: 100%; object-fit: contain"
+        />
       </div>
       <div class="chart-box">
-        <div style="flex: 1;">
-          <h3 style="margin: 0;">分数</h3>
-          <div style="text-align: center;">
-            <div class="count-display">{{ num }}</div>
+        <div style="flex: 1">
+          <h3 style="margin: 0">分数</h3>
+          <div style="text-align: center">
+            <div class="count-display">{{ score }}</div>
           </div>
         </div>
-        <div style="flex: 1;">
-          <h3 style="margin: 0;">状态</h3>
-          <div style="text-align: center;">
+        <div style="flex: 1">
+          <h3 style="margin: 0">状态</h3>
+          <div style="text-align: center">
             <div class="hints-area">
               <div v-if="faceHint" class="hint-text">{{ faceHint }}</div>
               <template v-else>
@@ -30,13 +36,28 @@
     <div class="control-buttons">
       <el-button type="primary" @click="start()" :disabled="cameraActive">开启摄像头</el-button>
       <el-button type="danger" @click="stop()" :disabled="!cameraActive">关闭摄像头</el-button>
-      <el-select v-model="selectedDeviceId" placeholder="选择摄像头" style="width: 15rem; margin:0 10px;" :disabled="cameraActive">
-        <el-option v-for="cam in cameraList" :key="cam.deviceId" :label="cam.label || `摄像头${camIndex++}`" :value="cam.deviceId"/>
+      <el-select
+        v-model="selectedDeviceId"
+        placeholder="选择摄像头"
+        style="width: 15rem; margin: 0 10px"
+        :disabled="cameraActive"
+      >
+        <el-option
+          v-for="(cam, idx) in cameraList"
+          :key="cam.deviceId"
+          :label="cam.label || `摄像头${idx + 1}`"
+          :value="cam.deviceId"
+        />
       </el-select>
-      <el-button @click="login">返回</el-button>
-      <div style="float: right; display: flex; gap: 10px;">
+      <el-button @click="goBack">返回</el-button>
+      <div style="float: right; display: flex; gap: 10px">
         <el-checkbox v-model="drawingEnabled" @change="onDrawingToggle">绘图开关</el-checkbox>
-        <el-button type="success" @click="downloadOriginVideo" :disabled="cameraActive || !hasRecordedVideo">下载原视频</el-button>
+        <el-button
+          type="success"
+          @click="downloadOriginVideo"
+          :disabled="cameraActive || !hasRecordedVideo"
+          >下载原视频</el-button
+        >
       </div>
     </div>
 
@@ -74,78 +95,94 @@
 </template>
 
 <script setup>
-import {
-  start_monitor_situp,
-  stop_monitor_situp,
-} from '@/api/user.js'
+import { start_monitor_situp, stop_monitor_situp } from '@/api/user.js'
 import { ref, onMounted, onUnmounted } from 'vue'
-import Chart from 'chart.js/auto'
 import { useRouter } from 'vue-router'
+import { useVoice } from './composables/useVoice.js'
+import { useTestCountdown } from './composables/useTestCountdown.js'
+import { useTestCharts } from './composables/useTestCharts.js'
+import { useTestingWebRTC } from './composables/useTestingWebRTC.js'
 
-// 视频参数配置
-let mediaParams = {
-  video: {
-    width: { ideal: 640 },
-    height: { ideal: 480 },
-    frameRate: { ideal: 15, max: 30 },
-  },
-  audio: false,
-}
-
-const countChartElement = ref(null)
-const angleChartElement = ref(null)
-const cameraActive = ref(false)
-let num = ref(0)
-let count = ref(0) // 用于显示个数
-let countChartInstance = null
-let angleChartInstance = null
 const router = useRouter()
-
-let timestamps = []
-let angles = []
-let nums = []
-let startTime = 0
-let is_timeout = false
-const isRegister = ref(false)
-const detectStarted = ref(false)
-
-// 倒计时配置：总时长毫秒，默认60000ms = 1分钟
-const COUNTDOWN_TOTAL_MS = 60_000
-// 当前剩余毫秒
-const leftCountdownMs = ref(0)
-let countdownInterval = null
-
-// 摄像头列表与选中设备
-const cameraList = ref([])
-const selectedDeviceId = ref('')
-let camIndex = 1
-const resultVideo = ref(null)
-
-// 后端回传流：ontrack 只存不挂；loaded:true 与轨道双条件齐了才切（修模型加载期黑屏）
-let remoteStream = null
-let remoteReady = false
-
-const attachRemoteIfNeeded = () => {
-  if (!remoteReady || !remoteStream || !resultVideo.value) return
-  if (resultVideo.value.srcObject === remoteStream) return // 幂等：同一流不重复挂
-  resultVideo.value.srcObject = remoteStream
-  console.log("画面已切换为后端处理流")
-}
-
-let webrtc
-let mediaStream = null;
-let mediaRecorder = null
-let recordedChunks = []
-let hasRecordedVideo = ref(false)
-
 const username = localStorage.getItem('username')
 console.log('获取到的username:', username)
 
-// 绘图开关
-const drawingEnabled = ref(true)
-const hints = ref(["请点击开始按钮"])
-// 人脸门禁提示：优先于 hints 展示；通过短暂自清，失败持续到下次识别结果
+// 模板 refs
+const resultVideo = ref(null)
+const countChartElement = ref(null)
+const angleChartElement = ref(null)
+
+// 会话状态
+const cameraActive = ref(false)
+const score = ref(0)
+const hints = ref(['请点击开始按钮'])
 const faceHint = ref('')
+const drawingEnabled = ref(true)
+const detectStarted = ref(false)
+
+// 结束状态：finishTest 的单一事实源（取代原 hasStopSpoken）
+let finished = false
+let timedOut = false
+let startTime = 0 // 正式开始时刻，0 表示尚未开始（图表入库门槛）
+let lastReadyState = false
+let lastFaceState = null
+
+const voice = useVoice()
+const charts = useTestCharts(countChartElement, angleChartElement)
+
+const {
+  leftCountdownMs,
+  isCountingDown,
+  countdownDisplay,
+  formatCountdown,
+  prepareCountdown,
+  cancel: cancelCountdown,
+  reset: resetCountdown,
+  dispose: disposeCountdown,
+} = useTestCountdown({
+  speak: voice.speak,
+  onStartTest: () => {
+    startTime = Date.now()
+    sendConfig({ type: 'config', start: true })
+  },
+  onTimeout: () => {
+    timedOut = true
+    // finishTest(`倒计时结束，您的成绩为：${score.value}个`)
+    stop()
+  },
+})
+
+// 违规/提示声明式表格：fatal 结束测试，非致命走重复提醒
+const VIOLATIONS = [
+  { flag: 'is_waiting_for_flat', fatal: false, message: () => '请平躺，双腿保持不动' },
+  { flag: 'is_arm_force_cheat', fatal: false, message: () => '检测到手臂借力' },
+  {
+    flag: 'is_out_of_bounds',
+    fatal: true,
+    message: (s) => `检测到身体移出画面，本次测试结束，您的成绩为${s}个`,
+  },
+  {
+    flag: 'is_knee_move',
+    fatal: true,
+    message: (s) => `检测到大幅移动，请避免其他人干扰画面，本次测试结束，您的成绩为${s}个`,
+  },
+  {
+    flag: 'is_assist_cheat',
+    fatal: true,
+    message: (s) => `检测到可能有人助力，请避免其他人干扰画面，本次测试结束，您的成绩为${s}个`,
+  },
+]
+
+// ---- 帧数据处理（原 handleWsMessage 拆分） ----
+
+const applyFrameData = (result) => {
+  score.value = result.score
+  hints.value = result.hints && result.hints.length ? result.hints : ['正常']
+  if (startTime !== 0) {
+    charts.pushPoint(Number(result.timestamp) - startTime, result.score, result.angle)
+  }
+}
+
 const clearFaceHintLater = () => {
   const text = faceHint.value
   setTimeout(() => {
@@ -153,638 +190,170 @@ const clearFaceHintLater = () => {
   }, 2000)
 }
 
-// ready 状态跟踪
-let lastReadyState = false
-// 人脸状态跟踪（随帧数据 result.face 变化时更新提示）
-let lastFaceState = null
-// 读秒状态
-const isCountingDown = ref(false)
-let countdownTimer = null
-// 倒计时显示文本
-const countdownDisplay = ref('')
-// 结束播报状态
-let hasStopSpoken = false
-
-const onDrawingToggle = (val) => {
-  if (webrtc && webrtc.ws && webrtc.ws.readyState === WebSocket.OPEN) {
-    webrtc.ws.send(JSON.stringify({
-      type: 'config',
-      drawing: val,
-    }))
+const applyFaceState = (face) => {
+  if (!face) return
+  if (face.state !== lastFaceState) {
+    lastFaceState = face.state
+    if (face.state === 'checking') {
+      faceHint.value = '正在进行人脸识别，请注视摄像头'
+    } else if (face.state === 'passed') {
+      if (face.registered === false) {
+        faceHint.value = '未注册学生，直接放行'
+        clearFaceHintLater()
+      } else {
+        faceHint.value = '人脸识别完成'
+        clearFaceHintLater()
+      }
+    }
+  }
+  // 失败/超时：前两次静默重试，第3次起才提示（fail_count 由后端累计）
+  if ((face.state === 'failed' || face.state === 'timeout') && (face.fail_count || 0) >= 3) {
+    faceHint.value = '人脸识别未通过，请重试'
   }
 }
 
-const start = async () => {
-  if (cameraActive.value) return // 防止重复开启
-  isRegister.value = true
-  num.value = 0
-  count.value = 0
-  nums = []
-  angles = []
-  timestamps = []
-  hints.value = ["连接中..."]
-  faceHint.value = ""
-  detectStarted.value = false
-  lastReadyState = false
-  lastFaceState = null
-  isCountingDown.value = false
-  countdownDisplay.value = ''
-  hasStopSpoken = false
-
-  // 重置倒计时
-  leftCountdownMs.value = COUNTDOWN_TOTAL_MS
-  if (countdownInterval) clearInterval(countdownInterval)
-  countdownInterval = null
-  if (countdownTimer) clearInterval(countdownTimer)
-  countdownTimer = null
-  is_timeout = false
-
-  // 清除图表数据
-  if (countChartInstance) {
-    countChartInstance.destroy()
-    countChartInstance = null
+const applyReady = (result) => {
+  const currentReady = result.ready === true || result.ready === 1
+  if (currentReady && !lastReadyState && !detectStarted.value) {
+    // ready 上升沿：开始准备读秒
+    detectStarted.value = true
+    prepareCountdown()
   }
-  if (angleChartInstance) {
-    angleChartInstance.destroy()
-    angleChartInstance = null
+  lastReadyState = currentReady
+}
+
+const applyViolations = (result) => {
+  if (finished) return
+  const fatal = VIOLATIONS.find((v) => v.fatal && result[v.flag])
+  if (fatal) {
+    finishTest(fatal.message(score.value))
+    return
   }
+  const warning = VIOLATIONS.find((v) => !v.fatal && result[v.flag])
+  if (warning) voice.remind(warning.message(score.value))
+}
 
-  // 清除图像预览
-  cleanup()
+const handleWsMessage = (result) => {
+  applyFrameData(result)
+  applyFaceState(result.face)
+  applyReady(result)
+  applyViolations(result)
+}
 
-  try {
-    // 初始化新图表
-    initCountChart()
-    initAngleChart()
+// ---- WebRTC 消息回调 ----
 
-    const res = await start_monitor_situp(username)
-    console.log('启动摄像头返回:', res)
+const handleLoaded = () => {
+  if (!detectStarted.value) hints.value = ['准备就绪']
+}
 
-    if (res.status === 200) {
-      startRecord(username)
+const handleError = (message) => {
+  faceHint.value = '' // 错误提示不被人脸提示遮挡
+  hints.value = ['错误：' + (message || '后端处理失败')]
+  finishTest(null, { speak: false }) // 抑制"测试已结束"成绩语音
+}
 
-      cameraActive.value = true
-    }
-  } catch (err) {
-    console.error('启动摄像头失败:', err)
-    cameraActive.value = false
-    isRegister.value = false
-  }
+const handleTestEnd = () => {
+  finishTest(
+    timedOut
+      ? `倒计时结束，您的成绩为：${score.value}个`
+      : `测试已结束，您的成绩为：${score.value}个`,
+  )
+}
+
+const {
+  cameraList,
+  selectedDeviceId,
+  hasRecordedVideo,
+  loadCameraList,
+  connect,
+  stopMedia,
+  closeConnection,
+  sendConfig,
+  downloadOriginVideo,
+  resetRecording,
+} = useTestingWebRTC({
+  videoRef: resultVideo,
+  onData: handleWsMessage,
+  onLoaded: handleLoaded,
+  onError: handleError,
+  onEnd: handleTestEnd,
+})
+
+// ---- 会话生命周期 ----
+
+// 测试结束的唯一入口：幂等，播报成绩并关闭会话
+const finishTest = (message, { speak = true } = {}) => {
+  if (finished) return
+  finished = true
+  if (speak && message) voice.speak(message, true)
+  stop()
 }
 
 const stop = async () => {
   if (!cameraActive.value) return // 防止重复关闭
   cameraActive.value = false
-
-  if (countdownInterval){
-    clearInterval(countdownInterval)
-    countdownInterval = null
-  }
-  if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
-  }
-  isCountingDown.value = false
-  countdownDisplay.value = ''
+  cancelCountdown()
 
   try {
-    stopRecord()
-
+    stopMedia()
     const res = await stop_monitor_situp(username)
     console.log('关闭摄像头返回:', res)
   } catch (err) {
     console.error('关闭摄像头失败:', err)
+  } finally {
+    // closeConnection() // 服务端会关ws连接，这里关闭会导致不播报成绩
   }
 }
 
-// 加载所有摄像头设备列表
-const loadCameraList = async () => {
+const start = async () => {
+  if (cameraActive.value) return // 防止重复开启
+
+  score.value = 0
+  hints.value = ['连接中...']
+  faceHint.value = ''
+  detectStarted.value = false
+  lastReadyState = false
+  lastFaceState = null
+  finished = false
+  timedOut = false
+  startTime = 0
+  voice.reset()
+  resetCountdown()
+  charts.reset()
+  resetRecording()
+
   try {
-    const devices = await navigator.mediaDevices.enumerateDevices()
-    cameraList.value = devices.filter(d=>d.kind === 'videoinput')
-    if(cameraList.value.length) selectedDeviceId.value = cameraList.value[0].deviceId
+    const res = await start_monitor_situp(username)
+    console.log('启动摄像头返回:', res)
+    if (res.status === 200) {
+      await connect(username)
+      cameraActive.value = true
+    }
   } catch (err) {
-    console.error('获取摄像头列表失败', err)
+    console.error('启动摄像头失败:', err)
+    cameraActive.value = false
   }
 }
 
-// 打开摄像头
-const openCamera = async () => {
-  // 如果选中了摄像头deviceId则指定设备
-  if (selectedDeviceId.value) {
-    mediaParams.video.deviceId = { exact: selectedDeviceId.value }
-  }
-  mediaStream = await navigator.mediaDevices.getUserMedia(mediaParams);
-  resultVideo.value.srcObject = mediaStream;
+const onDrawingToggle = (val) => {
+  sendConfig({ type: 'config', drawing: val })
 }
 
-const startLocalRecording = () => {
-  // 初始化视频录制
-  recordedChunks = []
-  mediaRecorder = new MediaRecorder(mediaStream, {
-                    mimeType: 'video/mp4'
-                })
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > -1) recordedChunks.push(e.data)
-  }
-  mediaRecorder.start()
-}
-
-const stopLocalRecording = () => {
-  // 停止视频录制
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    mediaRecorder.stop()
-  }
-  hasRecordedVideo.value = true
-}
-
-// 建立 WebRTC 与 WebSocket 连接
-const createWebRTC = async (uid) => {
-
-  let pc;
-
-  const ws = new WebSocket(
-    `ws://127.0.0.1:8090/ws/webrtc/${uid}/`
-  )
-
-  ws.onopen = async () => {
-
-    // 每次连接重置远端流状态：本次 ready 前始终显示本地采集画面
-    remoteStream = null
-    remoteReady = false
-
-    await openCamera()
-    startLocalRecording()
-
-    // 创建 WebRTC RTCPeerConnection 对象
-    pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19301' },
-        { urls: 'stun:stun.miwifi.com:3477' },
-      ]
-    })
-
-    // 添加本地视频流
-    mediaStream.getTracks().forEach(track => {
-      pc.addTrack(track, mediaStream)
-      if (track.kind === 'video') {
-        track.contentHint = 'detail'
-      }
-    })
-
-    // 接收后端回传的视频流：只存不挂，双条件齐了才切（本地预览保留到 ready）
-    pc.ontrack = (evt) => {
-      console.log("收到后端回传视频流", evt);
-      remoteStream = evt.streams[0] || new MediaStream([evt.track]);
-      attachRemoteIfNeeded();
-    };
-
-    // 接收后端回传的ICE候选
-    pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        ws.send(JSON.stringify({
-          type: "ice",
-          candidate: e.candidate
-        }))
-      }
-    }
-
-    // 发送 WebRTC offer
-    const offer = await pc.createOffer()
-
-    await pc.setLocalDescription(offer)
-
-    ws.send(JSON.stringify({
-      type: "offer",
-      sdp: offer.sdp
-    }))
-  }
-
-  // WebSocket 接收消息
-  ws.onmessage = async (event) => {
-
-    const msg = JSON.parse(event.data)
-
-    if (msg.type === "answer") {
-
-      // WebRTC 回传的应答消息
-      await pc.setRemoteDescription({
-        type: "answer",
-        sdp: msg.sdp
-      })
-    }
-    else if (msg.type === "data") {
-      // 接收数据并展示
-      handleWsMessage(msg.data)
-    }
-    else if (msg.type === "loaded") {
-      // 模型加载完成通知；人脸状态随帧数据（result.face）承载
-      if (msg.value === true) {
-        if (!detectStarted.value) hints.value = ["准备就绪"]
-        remoteReady = true
-        attachRemoteIfNeeded() // 轨道先到则此刻切；未到则等 ontrack 再查
-      }
-    }
-    else if (msg.type === "error") {
-      // 后端用户进程报错（随后会有 end 消息收尾）
-      console.error("后端处理错误:", msg.message)
-      faceHint.value = "" // 错误提示不被人脸提示遮挡
-      hints.value = ["错误：" + (msg.message || "后端处理失败")]
-      hasStopSpoken = true // 抑制误播"测试已结束"成绩语音
-      stop()
-    }
-    else if (msg.type === "end") {
-      console.log("测试结束")
-      handleWsClose()
-    }
-  }
-
-  ws.onclose = () => console.log("RTC WS连接关闭");
-  ws.onerror = err => console.error("WebSocket错误", err);
-
-  return { pc, ws }
-}
-
-const handleWsMessage = (result) => {
-  num.value = result.score
-  hints.value = result.hints || []
-  if (hints.value.length === 0) {
-    hints.value = ["正常"]
-  }
-
-  // 人脸状态随帧数据承载（原 phase:face / face_result）
-  const face = result.face
-  if (face) {
-    if (face.state !== lastFaceState) {
-      lastFaceState = face.state
-      if (face.state === "checking") {
-        faceHint.value = "正在进行人脸识别，请注视摄像头"
-      } else if (face.state === "passed") {
-        if (face.registered === false) {
-          faceHint.value = "未注册学生，直接放行"
-          clearFaceHintLater()
-        } else {
-          faceHint.value = "人脸识别完成"
-          clearFaceHintLater()
-        }
-      }
-    }
-    // 失败/超时：前两次静默重试，第3次起才提示（fail_count 由后端累计，会话内跨重试累计）
-    if ((face.state === "failed" || face.state === "timeout")
-        && (face.fail_count || 0) >= 3) {
-      faceHint.value = "人脸识别未通过，请重试"
-    }
-  }
-
-  if (startTime != 0) {
-    timestamps.push(Number(result.timestamp))
-    nums.push(Number(result.score))
-    angles.push(Number(result.angle))
-
-    updateCharts()
-  }
-
-  // 检测 ready 字段变化
-  const currentReady = result.ready === true || result.ready === 1
-  if (currentReady && !lastReadyState && !detectStarted.value) {
-    // ready 从 false 变为 true，开始准备倒计时
-    lastReadyState = true
-    startPrepareCountdown()
-  } else {
-    lastReadyState = currentReady
-  }
-
-  if (!hasStopSpoken) {
-    if (result.is_waiting_for_flat) {
-      speakMessage("请平躺，双腿保持不动", false);
-    }
-    if (result.is_arm_force_cheat) {
-      speakMessage("检测到手臂借力", false);
-    }
-    if (result.is_out_of_bounds) {
-      if (!hasStopSpoken) {
-        speakMessage("检测到身体移出画面，本次测试结束，您的成绩为" + num.value + "个");
-        hasStopSpoken = true;
-        stop();
-      }
-    }
-    if (result.is_knee_move) {
-      if (!hasStopSpoken) {
-        hasStopSpoken = true;
-        speakMessage("检测到大幅移动，请避免其他人干扰画面，本次测试结束，您的成绩为" + num.value + "个");
-        stop();
-      }
-    }
-    if (result.is_assist_cheat) {
-      if (!hasStopSpoken) {
-        speakMessage("检测到可能有人助力，请避免其他人干扰画面，本次测试结束，您的成绩为" + num.value + "个");
-        hasStopSpoken = true;
-        stop();
-      }
-    }
-  }
-}
-
-const handleWsClose = () => {
-  
-  if (!hasStopSpoken) {
-    hasStopSpoken = true
-    if (is_timeout) {
-      speakMessage('倒计时结束，您的成绩为：' + num.value + '个')
-    } else {
-      speakMessage('测试已结束，您的成绩为：' + num.value + '个')
-    }
-  }
-
-}
-
-const startRecord = async (uid) => {
-  webrtc = await createWebRTC(uid)
-}
-
-const stopRecord = () => {
-  // 停止录制
-  stopLocalRecording();
-  if (mediaStream) {
-    mediaStream.getTracks().forEach(track => track.stop());
-    mediaStream = null;
-  }
-}
-
-// 下载原视频方法
-const downloadOriginVideo = () => {
-  if (!recordedChunks.length) return
-  // 生成文件名 situp_年月日_时分秒
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  const hour = String(now.getHours()).padStart(2, '0')
-  const minute = String(now.getMinutes()).padStart(2, '0')
-  const second = String(now.getSeconds()).padStart(2, '0')
-  const fileName = `situp_${year}${month}${day}_${hour}${minute}${second}`
-
-  const blob = new Blob(recordedChunks, { type: 'video/mp4' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${fileName}.mp4`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
-const login = async () => {
+const goBack = () => {
   router.push('/student/test')
 }
 
-const initCountChart = () => {
-  const ctx = countChartElement.value.getContext('2d')
-  if (countChartInstance) {
-    countChartInstance.destroy()
-  }
-  countChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: timestamps.map((ts) => formatTimestamp(ts)),
-      datasets: [
-        {
-          label: '仰卧起坐个数',
-          data: [],
-          borderColor: '#2d7acd',
-          backgroundColor: 'rgba(45, 122, 205, 0.2)',
-          fill: true,
-          tension: 0,
-          pointRadius: 0
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      scales: {
-        x: {
-          title: {
-            display: true,
-            text: '时间',
-          },
-          ticks: {
-            autoSkip: true,
-            maxRotation: 0,
-            maxTicksLimit: 8,
-          },
-        },
-        y: {
-          title: {
-            display: true,
-            text: '个数',
-          },
-        },
-      },
-      plugins: {
-        tooltip: {
-          callbacks: {
-            label: function (context) {
-              return `${formatTimestamp(timestamps[context.dataIndex + Math.max(0, timestamps.length - 100)])}: ${context.raw}`
-            },
-          },
-        },
-      },
-    },
-  })
-}
-
-const initAngleChart = () => {
-  const ctx = angleChartElement.value.getContext('2d')
-  if (angleChartInstance) {
-    angleChartInstance.destroy()
-  }
-  angleChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: timestamps.map((ts) => formatTimestamp(ts)),
-      datasets: [
-        {
-          label: '起伏角度',
-          data: [],
-          borderColor: '#67c23a',
-          backgroundColor: 'rgba(103, 194, 58, 0.2)',
-          fill: true,
-          tension: 0,
-          pointRadius: 0
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-      scales: {
-        x: {
-          title: {
-            display: true,
-            text: '时间',
-          },
-          ticks: {
-            autoSkip: true,
-            maxRotation: 0,
-            maxTicksLimit: 8,
-          },
-        },
-        y: {
-          beginAtZero: true,
-          suggestedMax: 60,
-        },
-      },
-      plugins: {
-        tooltip: {
-          callbacks: {
-            label: function (context) {
-              return `${formatTimestamp(timestamps[context.dataIndex + Math.max(0, timestamps.length - 100)])}: ${context.raw}°`
-            },
-          },
-        },
-      },
-    },
-  })
-}
-
-const updateCharts = () => {
-  if (countChartInstance) {
-    countChartInstance.data.labels = timestamps.map((ts) => formatTimestamp(ts - startTime))
-    countChartInstance.data.datasets[0].data = nums
-    const maxPoints = 15 * 60
-    if (countChartInstance.data.labels.length > maxPoints) {
-      countChartInstance.data.labels = countChartInstance.data.labels.slice(-maxPoints)
-      countChartInstance.data.datasets[0].data =
-        countChartInstance.data.datasets[0].data.slice(-maxPoints)
-    }
-    countChartInstance.update()
-  }
-  if (angleChartInstance) {
-    angleChartInstance.data.labels = timestamps.map((ts) => formatTimestamp(ts - startTime))
-    angleChartInstance.data.datasets[0].data = angles
-    const maxPoints = 15 * 10
-    if (angleChartInstance.data.labels.length > maxPoints) {
-      angleChartInstance.data.labels = angleChartInstance.data.labels.slice(-maxPoints)
-      angleChartInstance.data.datasets[0].data =
-        angleChartInstance.data.datasets[0].data.slice(-maxPoints)
-    }
-    angleChartInstance.update()
-  }
-}
-
-const formatTimestamp = (timestamp) => {
-  if (!timestamp) return ''
-  const date = new Date(timestamp)
-  return [
-    date.getMinutes().toString().padStart(2, '0'),
-    date.getSeconds().toString().padStart(2, '0'),
-  ].join(':')
-}
-
-
-const cleanup = () => {
-  if (resultVideo.value && resultVideo.value.src) {
-    URL.revokeObjectURL(resultVideo.value.src)
-    resultVideo.value.src = null
-  }
-}
-
-const speakMessage = (text, interrupt = true) => {
-  if (!('speechSynthesis' in window)) {
-    console.warn('当前浏览器不支持语音播报')
-    return
-  }
-  if (interrupt) window.speechSynthesis.cancel()
-  else if (window.speechSynthesis.speaking) return
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = 'zh-CN'
-  window.speechSynthesis.speak(utterance)
-}
-
-// 开始准备倒计时（3秒读秒）
-const startPrepareCountdown = () => {
-  if (detectStarted.value) return
-  detectStarted.value = true
-  isCountingDown.value = true
-
-  speakMessage("检测完成，准备开始")
-
-  let countdown = 6
-  countdownDisplay.value = countdown >= 3 ? "3" : countdown.toString()
-
-  countdownTimer = setInterval(() => {
-    countdown--
-    if (countdown > 0) {
-      countdownDisplay.value = countdown >= 3 ? "3" : countdown.toString()
-      if (countdown <= 3) {
-        speakMessage(countdown.toString())
-      }
-    } else {
-      // 读秒结束，开始正式倒计时
-      clearInterval(countdownTimer)
-      countdownTimer = null
-      countdownDisplay.value = '开始'
-      startTime = Date.now()
-      speakMessage("开始")
-      webrtc.ws.send(JSON.stringify({ type: 'config', start: true }))
-
-      // 延迟后启动正式倒计时
-      setTimeout(() => {
-        isCountingDown.value = false
-        countdownDisplay.value = ''
-        startTestCountdown()
-      }, 1000)
-    }
-  }, 1000)
-}
-
-// 开始正式测试倒计时
-const startTestCountdown = () => {
-  if (countdownInterval) clearInterval(countdownInterval)
-  leftCountdownMs.value = COUNTDOWN_TOTAL_MS
-  countdownInterval = setInterval(() => {
-    leftCountdownMs.value -= 1000
-    if (leftCountdownMs.value <= 0) {
-      clearInterval(countdownInterval)
-      countdownInterval = null
-      leftCountdownMs.value = 0
-      is_timeout = true
-      stop()
-    }
-  }, 1000)
-}
-
-// 毫秒转为 MM:SS
-const formatCountdown = (ms) => {
-  const totalSec = Math.max(0, Math.floor(ms / 1000))
-  const min = String(Math.floor(totalSec / 60)).padStart(2, '0')
-  const sec = String(totalSec % 60).padStart(2, '0')
-  return `${min}:${sec}`
-}
+onMounted(() => {
+  charts.init()
+  loadCameraList()
+})
 
 onUnmounted(() => {
-  if (countdownInterval) clearInterval(countdownInterval)
-  if (countdownTimer) clearInterval(countdownTimer)
-  if (countChartInstance) {
-    countChartInstance.destroy()
-    countChartInstance = null
-  }
-  if (angleChartInstance) {
-    angleChartInstance.destroy()
-    angleChartInstance = null
-  }
-  cleanup()
+  disposeCountdown()
+  charts.destroy()
   if (cameraActive.value) {
     stop()
   }
-})
-
-onMounted(() => {
-  initCountChart()
-  initAngleChart()
-  loadCameraList()
 })
 </script>
 
@@ -840,13 +409,6 @@ onMounted(() => {
   height: 100% !important;
 }
 
-.video-preview {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
 .control-buttons {
   flex: none;
   padding: 12px 20px;
@@ -887,13 +449,6 @@ onMounted(() => {
   gap: 10px;
 }
 
-.count-info {
-  font-size: 24px;
-  font-weight: bold;
-  color: #67c23a;
-  vertical-align: middle;
-}
-
 .count-display {
   font-size: 48px;
   font-weight: bold;
@@ -913,26 +468,6 @@ onMounted(() => {
   font-size: 32px;
   font-weight: bold;
   color: #e6a23c;
-}
-
-.record-details {
-  text-align: left;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.record-details img {
-  max-width: 300%;
-  max-height: 200px;
-  object-fit: contain;
-}
-
-.record-details p {
-  margin: 5px 0;
-  color: #606266;
 }
 
 @media (max-width: 768px) {
