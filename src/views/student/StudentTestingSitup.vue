@@ -99,7 +99,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useVoice } from './composables/useVoice.js'
 import { useTestCountdown } from './composables/useTestCountdown.js'
-import { useTestCharts } from './composables/useTestCharts.js'
+import { createTestChart } from './composables/createTestChart.js'
 import { useTestingWebRTC } from './composables/useTestingWebRTC.js'
 
 const router = useRouter()
@@ -127,7 +127,23 @@ let lastReadyState = false
 let lastFaceState = null
 
 const voice = useVoice()
-const charts = useTestCharts(countChartElement, angleChartElement)
+const countChart = createTestChart(countChartElement, {
+  label: '仰卧起坐个数',
+  color: '#2d7acd',
+  fill: 'rgba(45, 122, 205, 0.2)',
+  yTitle: '个数',
+  beginAtZero: true,
+  maxPoints: 15 * 60 * 3,
+})
+const angleChart = createTestChart(angleChartElement, {
+  label: '起伏角度',
+  color: '#67c23a',
+  fill: 'rgba(103, 194, 58, 0.2)',
+  beginAtZero: true,
+  suggestedMax: 60,
+  valueSuffix: '°',
+  maxPoints: 15 * 60 * 3,
+})
 
 const {
   leftCountdownMs,
@@ -178,7 +194,9 @@ const applyFrameData = (result) => {
   score.value = result.score
   hints.value = result.hints && result.hints.length ? result.hints : ['正常']
   if (startTime !== 0) {
-    charts.pushPoint(Number(result.timestamp) - startTime, result.score, result.angle)
+    const elapsed = Number(result.timestamp) - startTime
+    countChart.pushPoint(elapsed, result.score)
+    angleChart.pushPoint(elapsed, result.angle)
   }
 }
 
@@ -317,7 +335,8 @@ const start = async () => {
   startTime = 0
   voice.reset()
   resetCountdown()
-  charts.reset()
+  countChart.reset()
+  angleChart.reset()
   resetRecording()
 
   try {
@@ -342,13 +361,15 @@ const goBack = () => {
 }
 
 onMounted(() => {
-  charts.init()
+  countChart.init()
+  angleChart.init()
   loadCameraList()
 })
 
 onUnmounted(() => {
   disposeCountdown()
-  charts.destroy()
+  countChart.destroy()
+  angleChart.destroy()
   if (cameraActive.value) {
     stop()
   }

@@ -10,7 +10,7 @@ src/views/student/
 ├── StudentTestingSitup.vue          467 行（模板 + 脚本 + 样式）
 └── composables/
     ├── useTestingWebRTC.js          225 行  ws/pc 握手、摄像头、本地录像/下载/自动保存
-    ├── useTestCharts.js             129 行  两张折线图的创建/入库/复位
+    ├── createTestChart.js           135 行  通用曲线图工厂（canvas + 基本信息 → 图表实例）
     ├── useTestCountdown.js          114 行  准备读秒 + 60s 正式倒计时
     └── useVoice.js                   48 行  语音播报 + 重复提醒节流
 ```
@@ -29,7 +29,7 @@ src/views/student/
 |---|---|---|
 | `useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd })` | `cameraList` `selectedDeviceId` `hasRecordedVideo` `autoSave` `loadCameraList` `connect(uid)` `stopMedia()` `sendConfig(payload)` `downloadOriginVideo()` `resetRecording()` | `connect` 建 `ws://127.0.0.1:8090/ws/webrtc/<uid>/`、开摄像头、MediaRecorder 录制、SDP offer/answer；`ws.onmessage` 按类型分发：`data`→`onData`、`loaded`→`onLoaded`、`error`→`onError`、`end`→`onEnd`。`stopMedia` 停录制+本地流。**ws 由服务端负责关闭**（客户端不主动关，否则收不到 `end`、成绩不播报），`socket.onclose` 时释放 pc（带身份校验，避免旧连接迟到的 close 误关新会话）。`autoSave` 为「自动保存视频」开关，勾选后停录制时（收尾数据块就绪的 `onstop` 回调里）自动下载 mp4 |
 | `useTestCountdown({ speak, onStartTest, onTimeout })` | `leftCountdownMs` `isCountingDown` `countdownDisplay` `formatCountdown` `prepareCountdown()` `cancel()` `reset()` `dispose()` | 读秒 6 拍：前 3 拍显示"准备"、后 3 拍 3/2/1（与语音同步），归零显示"开始"→ `onStartTest` → 1s 后自动启动 60s 正式倒计时 → 归零 `onTimeout`。`cancel`=停表（保留剩余时间显示，stop 用）；`reset`=停表+回满值（start 用）；`dispose`=卸载清定时器 |
-| `useTestCharts(countCanvas, angleCanvas)` | `init()` `reset()` `destroy()` `pushPoint(elapsedMs, score, angle)` | **x 轴为线性时间轴（毫秒）、从 0 开始**，tick/tooltip 均格式化为 `mm:ss`；数据点形如 `{x: 相对开始的毫秒, y: 数值}`；源数组保留**全程数据**，仅展示层截取最近 `15*60*3 = 2700` 点（3 分钟上限，测试实际 1 分钟） |
+| `createTestChart(canvas, options)` | `{ init() reset() destroy() pushPoint(elapsedMs, value) }` | **通用曲线图工厂**，可被任意页面调用多次创建多图：`canvas` 传模板 ref 或元素；`options` 含 `label / color / fill / yTitle / beginAtZero / suggestedMax / valueSuffix / xTitle / maxPoints`。**x 轴为线性时间轴（毫秒）、从 0 开始**，tick/tooltip 格式化 `mm:ss`；数据点 `{x: 相对开始的毫秒, y: 数值}`；源数组保留全程，仅展示层截取最近 `maxPoints` 点（默认 `15*60*3 = 2700`，3 分钟上限）。`init()` 需在 `onMounted` 后调用（幂等）；Situp 创建了两个实例：个数图（`yTitle:'个数'`）与角度图（`beginAtZero + suggestedMax:60 + '°'` 后缀） |
 | `useVoice()` | `speak(text, interrupt=true)` `remind(text)` `reset()` | `remind` 为持续提示（请平躺/手臂借力）：同文本 4 秒节流、不打断其它播报、文本变化立即重试；`reset` 清节流（新会话用） |
 
 ## 4. 主组件编排
@@ -107,7 +107,7 @@ sequenceDiagram
     B-->>M: loaded(true) + ontrack → 切换标注画面
     loop 每帧 data
         B-->>P: handleWsMessage
-        P->>M: charts.pushPoint / voice.remind
+        P->>M: countChart/angleChart.pushPoint / voice.remind
     end
     Note over P: ready 上升沿 → countdown.prepareCountdown(3-2-1)<br/>onStartTest → config start → 60s 倒计时
     alt fatal 违规 / 超时 / 后端 end
