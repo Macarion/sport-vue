@@ -12,10 +12,19 @@
         />
       </div>
       <div class="chart-box">
-        <div style="flex: 1">
-          <h3 style="margin: 0">分数</h3>
-          <div style="text-align: center">
-            <div class="count-display">{{ score }}</div>
+        <div style="flex: 1; display: flex">
+          <div style="flex: 1">
+            <h3 style="margin: 0">分数</h3>
+            <div style="text-align: center">
+              <div class="count-display">{{ score }}</div>
+            </div>
+          </div>
+          <div style="flex: 1">
+            <h3 style="margin: 0">倒计时</h3>
+            <div style="text-align: center">
+              <span class="count-display" v-if="isCountingDown">{{ countdownDisplay }}</span>
+              <span class="count-display" v-else>{{ formatCountdown(leftCountdownMs) }}</span>
+            </div>
           </div>
         </div>
         <div style="flex: 1">
@@ -51,27 +60,24 @@
       </el-select>
       <el-button @click="goBack">返回</el-button>
       <div style="float: right; display: flex; gap: 10px">
+        <el-checkbox v-model="autoSave">自动保存视频</el-checkbox>
         <el-checkbox v-model="drawingEnabled" @change="onDrawingToggle">绘图开关</el-checkbox>
         <el-button
           type="success"
           @click="downloadOriginVideo"
           :disabled="cameraActive || !hasRecordedVideo"
-          >下载原视频</el-button
+          >保存原视频</el-button
         >
       </div>
     </div>
 
-    <!-- 信息展示区域 -->
+    <!-- 图表展示区域：起伏角度(2/3 宽) + 仰卧起坐个数(1/3 宽) -->
     <div class="info-container">
       <el-row :gutter="20" class="info-row">
-        <el-col :span="8">
+        <el-col :span="16">
           <div class="info-card">
-            <h3>倒计时</h3>
-            <div class="info-content">
-              <div>
-                <span class="count-display" v-if="isCountingDown">{{ countdownDisplay }}</span>
-                <span class="count-display" v-else>{{ formatCountdown(leftCountdownMs) }}</span>
-              </div>
+            <div class="chart-section">
+              <canvas ref="angleChartElement"></canvas>
             </div>
           </div>
         </el-col>
@@ -79,13 +85,6 @@
           <div class="info-card">
             <div class="chart-section">
               <canvas ref="countChartElement"></canvas>
-            </div>
-          </div>
-        </el-col>
-        <el-col :span="8">
-          <div class="info-card">
-            <div class="chart-section">
-              <canvas ref="angleChartElement"></canvas>
             </div>
           </div>
         </el-col>
@@ -264,10 +263,10 @@ const {
   cameraList,
   selectedDeviceId,
   hasRecordedVideo,
+  autoSave,
   loadCameraList,
   connect,
   stopMedia,
-  closeConnection,
   sendConfig,
   downloadOriginVideo,
   resetRecording,
@@ -294,14 +293,13 @@ const stop = async () => {
   cameraActive.value = false
   cancelCountdown()
 
+  // 不在这里关 ws：服务端收到 stop 后会关，客户端抢先关闭会收不到 end，成绩不播报
   try {
     stopMedia()
     const res = await stop_monitor_situp(username)
     console.log('关闭摄像头返回:', res)
   } catch (err) {
     console.error('关闭摄像头失败:', err)
-  } finally {
-    // closeConnection() // 服务端会关ws连接，这里关闭会导致不播报成绩
   }
 }
 
@@ -433,20 +431,6 @@ onUnmounted(() => {
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-}
-
-.info-card h3 {
-  margin: 0 0 15px 0;
-  color: #409eff;
-}
-
-.info-content {
-  height: calc(100% - 60px);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
 }
 
 .count-display {

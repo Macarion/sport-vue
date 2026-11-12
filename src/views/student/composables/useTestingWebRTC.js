@@ -20,11 +20,14 @@ const ICE_SERVERS = [
 // - connect(uid): 建 WS、开摄像头、录制、SDP offer/answer、接收后端回传流
 // - 消息按类型分发给回调：onData / onLoaded / onError / onEnd
 // - stopMedia: 停录制与本地流（stop 前半段）
-// - closeConnection: 关 WS 与 RTCPeerConnection（stop 收尾，防泄漏）
+// - ws 由服务端负责关闭（客户端不主动关，否则收不到 end、成绩不播报），
+//   socket.onclose 时释放 pc
 export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd }) {
   const cameraList = ref([])
   const selectedDeviceId = ref('')
   const hasRecordedVideo = ref(false)
+  // 自动保存视频（默认关）：测试结束停录制时自动下载
+  const autoSave = ref(false)
 
   let ws = null
   let pc = null
@@ -73,7 +76,12 @@ export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd })
 
   const stopLocalRecording = () => {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-      mediaRecorder.stop()
+      const recorder = mediaRecorder
+      // stop 后先触发 dataavailable（收尾数据块）再触发 stop，此处再下载不丢帧
+      recorder.onstop = () => {
+        if (autoSave.value && recordedChunks.length) downloadOriginVideo()
+      }
+      recorder.stop()
       hasRecordedVideo.value = true // 仅真实录过才可下载
     }
   }
@@ -110,9 +118,13 @@ export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd })
 
   // 建立 WebRTC 与 WebSocket 连接
   const connect = async (uid) => {
-    ws = new WebSocket(`${WS_URL}/${uid}/`)
+    const socket = new WebSocket(`${WS_URL}/${uid}/`)
+    ws = socket
 
-    ws.onopen = async () => {
+    socket.onopen = async () => {
+      // 上一会话残留的 pc 先行释放（服务端未及关闭时的兜底）
+      if (pc) pc.close()
+
       // 每次连接重置远端流状态：本次 ready 前始终显示本地采集画面
       remoteStream = null
       remoteReady = false
@@ -140,18 +152,18 @@ export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd })
       // 接收后端回传的ICE候选
       pc.onicecandidate = (e) => {
         if (e.candidate) {
-          ws.send(JSON.stringify({ type: 'ice', candidate: e.candidate }))
+          socket.send(JSON.stringify({ type: 'ice', candidate: e.candidate }))
         }
       }
 
       // 发送 WebRTC offer
       const offer = await pc.createOffer()
       await pc.setLocalDescription(offer)
-      ws.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }))
+      socket.send(JSON.stringify({ type: 'offer', sdp: offer.sdp }))
     }
 
     // WebSocket 接收消息
-    ws.onmessage = async (event) => {
+    socket.onmessage = async (event) => {
       const msg = JSON.parse(event.data)
 
       if (msg.type === 'answer') {
@@ -175,8 +187,18 @@ export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd })
       }
     }
 
-    ws.onclose = () => console.log('RTC WS连接关闭')
-    ws.onerror = (err) => console.error('WebSocket错误', err)
+    socket.onclose = () => {
+      console.log('RTC WS连接关闭')
+      // ws 由服务端负责关闭（客户端抢先关闭会收不到 end、成绩不播报）；
+      // 关闭即会话结束，在此释放 pc。身份校验避免旧连接迟到的 close 误关新会话。
+      if (socket !== ws) return
+      ws = null
+      if (pc) {
+        pc.close()
+        pc = null
+      }
+    }
+    socket.onerror = (err) => console.error('WebSocket错误', err)
   }
 
   // 停止录制与本地采集
@@ -188,31 +210,14 @@ export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd })
     }
   }
 
-  // 关闭信道：修 stop() 不关 ws/pc 的泄漏
-  const closeConnection = () => {
-    if (ws) {
-      const current = ws
-      ws = null
-      if (current.readyState === WebSocket.OPEN || current.readyState === WebSocket.CONNECTING) {
-        current.close()
-      }
-    }
-    if (pc) {
-      pc.close()
-      pc = null
-    }
-    remoteStream = null
-    remoteReady = false
-  }
-
   return {
     cameraList,
     selectedDeviceId,
     hasRecordedVideo,
+    autoSave,
     loadCameraList,
     connect,
     stopMedia,
-    closeConnection,
     sendConfig,
     downloadOriginVideo,
     resetRecording,
