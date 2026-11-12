@@ -381,7 +381,7 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #f5f7fa;
+  background: #fff;
   overflow: hidden;
 }
 
@@ -436,9 +436,12 @@ onUnmounted(() => {
   height: auto;
 }
 
+.el-checkbox {
+  margin-right: 10px;
+}
+
 .info-container {
   flex: none;
-  padding: 12px 20px;
   height: 35vh;
 }
 
@@ -447,11 +450,8 @@ onUnmounted(() => {
 }
 
 .info-card {
-  height: 90%;
-  background: #fff;
-  border-radius: 8px;
+  height: 100%;
   padding: 20px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 }
 
 .count-display {
