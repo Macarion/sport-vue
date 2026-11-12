@@ -20,8 +20,9 @@ const ICE_SERVERS = [
 // - connect(uid): 建 WS、开摄像头、录制、SDP offer/answer、接收后端回传流
 // - 消息按类型分发给回调：onData / onLoaded / onError / onEnd
 // - stopMedia: 停录制与本地流（stop 前半段）
-// - ws 由服务端负责关闭（客户端不主动关，否则收不到 end、成绩不播报），
-//   socket.onclose 时释放 pc
+// - ws 由服务端负责关闭（客户端不主动关，否则收不到 end、成绩不播报）；
+//   onclose 不关 pc——远端 track 保持 live，测试结束后画面冻结在最后一帧（作弊分析用）。
+//   pc 在下次 connect 的 onopen 或 dispose()（组件卸载）时释放
 export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd }) {
   const cameraList = ref([])
   const selectedDeviceId = ref('')
@@ -122,14 +123,13 @@ export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd })
     ws = socket
 
     socket.onopen = async () => {
-      // 上一会话残留的 pc 先行释放（服务端未及关闭时的兜底）
-      if (pc) pc.close()
-
       // 每次连接重置远端流状态：本次 ready 前始终显示本地采集画面
       remoteStream = null
       remoteReady = false
 
       await openCamera()
+      // 上一会话残留的 pc 在此释放：画面已切到本地预览，关旧 pc 不产生黑屏间隙
+      if (pc) pc.close()
       startLocalRecording()
 
       pc = new RTCPeerConnection({ iceServers: ICE_SERVERS })
@@ -189,14 +189,9 @@ export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd })
 
     socket.onclose = () => {
       console.log('RTC WS连接关闭')
-      // ws 由服务端负责关闭（客户端抢先关闭会收不到 end、成绩不播报）；
-      // 关闭即会话结束，在此释放 pc。身份校验避免旧连接迟到的 close 误关新会话。
-      if (socket !== ws) return
-      ws = null
-      if (pc) {
-        pc.close()
-        pc = null
-      }
+      // 不在这里关 pc：远端 track 保持 live，测试结束后画面冻结在最后一帧（作弊分析用）。
+      // pc 由下次 connect 的 onopen 或 dispose() 释放；ws 由服务端关闭
+      if (socket === ws) ws = null
     }
     socket.onerror = (err) => console.error('WebSocket错误', err)
   }
@@ -210,6 +205,14 @@ export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd })
     }
   }
 
+  // 组件卸载时释放 pc（此时组件销毁，无需再冻结画面）；ws 由服务端关闭
+  const dispose = () => {
+    if (pc) {
+      pc.close()
+      pc = null
+    }
+  }
+
   return {
     cameraList,
     selectedDeviceId,
@@ -218,6 +221,7 @@ export function useTestingWebRTC({ videoRef, onData, onLoaded, onError, onEnd })
     loadCameraList,
     connect,
     stopMedia,
+    dispose,
     sendConfig,
     downloadOriginVideo,
     resetRecording,

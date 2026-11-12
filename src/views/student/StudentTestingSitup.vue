@@ -140,7 +140,7 @@ const angleChart = createTestChart(angleChartElement, {
   color: '#67c23a',
   fill: 'rgba(103, 194, 58, 0.2)',
   beginAtZero: true,
-  suggestedMax: 60,
+  suggestedMax: 80,
   valueSuffix: '°',
   maxPoints: 15 * 60 * 3,
 })
@@ -285,6 +285,7 @@ const {
   loadCameraList,
   connect,
   stopMedia,
+  dispose: disposeWebRTC,
   sendConfig,
   downloadOriginVideo,
   resetRecording,
@@ -373,6 +374,8 @@ onUnmounted(() => {
   if (cameraActive.value) {
     stop()
   }
+  // 释放 pc：卸载后不再需要冻结的最后一帧（ws 由服务端关闭）
+  disposeWebRTC()
 })
 </script>
 
